@@ -79,3 +79,8 @@ For the compiler to be included in Forge, build it next to it (otherwise Forge i
 git clone https://github.com/mezyqq/ios-compiler ~/forge/compiler
 cd ~/forge/compiler && ./build-llvm.sh > build.log 2>&1 && make && make toolchain   # LLVM takes hours
 ```
+
+## License
+
+Forge is licensed under the GNU General Public License v3.0 — see [LICENSE](LICENSE).
+Third-party code and its licenses: [THIRD_PARTY.txt](THIRD_PARTY.txt).

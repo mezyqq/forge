@@ -79,3 +79,8 @@ LiveContainer. Сборка инкрементальная; в меню прое
 git clone https://github.com/mezyqq/ios-compiler ~/forge/compiler
 cd ~/forge/compiler && ./build-llvm.sh > build.log 2>&1 && make && make toolchain   # LLVM — часы
 ```
+
+## Лицензия
+
+Forge распространяется по GNU General Public License v3.0 — см. [LICENSE](LICENSE).
+Сторонний код и его лицензии: [THIRD_PARTY.txt](THIRD_PARTY.txt).
