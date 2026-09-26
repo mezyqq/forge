@@ -213,11 +213,11 @@ final class Updater: ObservableObject {
 		return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
-	/// 0.10 > 0.9: сравниваем числа по частям.
+	/// 0.10 > 0.9: сравниваем числа по частям; лишняя часть (0.9.test, 0.9.1) — новее.
 	nonisolated static func newer(_ a: String, than b: String) -> Bool {
 		let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
 		for i in 0..<max(x.count, y.count) {
-			let p = i < x.count ? x[i] : 0, q = i < y.count ? y[i] : 0
+			let p = i < x.count ? x[i] : -1, q = i < y.count ? y[i] : -1
 			if p != q { return p > q }
 		}
 		return false
