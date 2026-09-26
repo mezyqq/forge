@@ -28,8 +28,9 @@ Release-сборка сама повышает `VERSION`/`BUILD` в `ipa.conf`, 
 
 - **Проекты** в Documents (видны в «Файлах»): шаблоны Python, JavaScript, веб-сайт, Lua, C и C++ (консоль)
   и iOS-приложения (SwiftUI, Swift, ObjC, игра на ObjC, ObjC++, C). Дерево папок, импорт файлов, поиск по проекту, zip.
-- **Редактор**: подсветка ~20 языков, темы (Xcode, оранжевая, фиолетовая, розовая, Monokai, Nord, «Матрица»,
-  Ocean, Solarized), номера строк, поиск/замена, проверка синтаксиса на лету (Python, JS, Lua, C, JSON). Со встроенным компилятором у файлов C / ObjC / C++ —
+- **Редактор**: подсветка ~20 языков, 30 тем (Xcode, GitHub, One, Catppuccin, Tokyo Night, Gruvbox, Rosé Pine, Ayu, Everforest,
+  Kanagawa, Night Owl, Tomorrow, Material, Solarized — у каждой светлая и тёмная версия; Dracula, Monokai, Nord, чёрная
+  AMOLED, Synthwave и другие), оформление приложения Системное / Светлое / Тёмное (Настройки → Оформление), номера строк, поиск/замена, проверка синтаксиса на лету (Python, JS, Lua, C, JSON). Со встроенным компилятором у файлов C / ObjC / C++ —
   настоящая диагностика clang, автодополнение clang с параметрами-заглушками (⇥ — к следующей) и clang-format
   (учитывается `.clang-format` в корне проекта).
 - **Запуск без JIT**: Python (pocketpy), JavaScript (JavaScriptCore), Lua 5.4, C (picoc), живое превью HTML.

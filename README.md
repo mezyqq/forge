@@ -28,8 +28,9 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
 
 - **Projects** in Documents (visible in the Files app): templates for Python, JavaScript, website, Lua, C and C++
   (console) and iOS apps (SwiftUI, Swift, ObjC, an ObjC game, ObjC++, C). Folder tree, file import, project-wide search, zip.
-- **Editor**: highlighting for ~20 languages, themes (Xcode, orange, purple, pink, Monokai, Nord, Matrix, Ocean,
-  Solarized), line numbers, find/replace, live syntax checking (Python, JS, Lua, C, JSON). With the built-in compiler, C / ObjC / C++
+- **Editor**: highlighting for ~20 languages, 30 themes (Xcode, GitHub, One, Catppuccin, Tokyo Night, Gruvbox, Rosé Pine, Ayu, Everforest, Kanagawa, Night Owl,
+  Tomorrow, Material, Solarized — each with a light and dark version; Dracula, Monokai, Nord, AMOLED black, Synthwave and
+  more), app appearance System / Light / Dark (Settings → Appearance), line numbers, find/replace, live syntax checking (Python, JS, Lua, C, JSON). With the built-in compiler, C / ObjC / C++
   files get real clang diagnostics, clang autocompletion with parameter placeholders (⇥ jumps to the next one) and
   clang-format (a `.clang-format` in the project root is respected).
 - **Running without JIT**: Python (pocketpy), JavaScript (JavaScriptCore), Lua 5.4, C (picoc), live HTML preview.

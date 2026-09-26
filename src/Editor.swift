@@ -264,6 +264,11 @@ final class CodeTextView: UITextView {
 		setNeedsDisplay()
 	}
 
+	override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+		super.traitCollectionDidChange(previous)
+		setNeedsDisplay()  // гуттер и номера строк — в цветах нового оформления
+	}
+
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		setNeedsDisplay()  // перерисовать номера при прокрутке

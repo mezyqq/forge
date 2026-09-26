@@ -221,6 +221,7 @@ struct SettingsView: View {
 				UpdateSection()
 				FeaturesSection()
 				if IpaBuilder.available { JITSection() }
+				Section(L("Appearance")) { AppearancePicker() }
 				Section(L("Language")) {
 					Picker(L("Language"), selection: $language) {
 						ForEach(L10n.languages, id: \.id) { Text($0.title).tag($0.id) }
@@ -426,36 +427,53 @@ struct ProviderView: View {
 
 struct ThemePickerView: View {
 	@AppStorage("theme") private var themeID = "xcode"
+	@Environment(\.colorScheme) private var scheme
 
 	var body: some View {
-		List(Theme.all) { t in
-			Button { themeID = t.id } label: {
-				HStack(spacing: 12) {
-					ThemePreview(theme: t)
-					VStack(alignment: .leading, spacing: 4) {
-						Text(L(t.name)).foregroundStyle(.primary)
-						HStack(spacing: 4) {
-							ForEach(Array(t.swatches.enumerated()), id: \.offset) { _, c in
-								Circle().fill(c).frame(width: 12, height: 12)
-							}
-						}
-					}
-					Spacer()
-					if t.id == themeID { Image(systemName: "checkmark").foregroundStyle(t.accentColor) }
-				}
+		List {
+			Section {
+				AppearancePicker()
+			} footer: {
+				Text(L("Themes in the first group switch between their light and dark version together with the appearance."))
 			}
+			group(.both, L("Light and dark"))
+			group(.dark, L("Dark only"))
+			group(.light, L("Light only"))
 		}
 		.navigationTitle(L("Theme"))
 		.navigationBarTitleDisplayMode(.inline)
+	}
+
+	private func group(_ kind: Theme.Kind, _ title: String) -> some View {
+		Section(title) {
+			ForEach(Theme.all.filter { $0.kind == kind }) { t in
+				Button { themeID = t.id } label: {
+					HStack(spacing: 12) {
+						ThemePreview(theme: t, dark: scheme == .dark)
+						VStack(alignment: .leading, spacing: 4) {
+							Text(L(t.name)).foregroundStyle(.primary)
+							HStack(spacing: 4) {
+								ForEach(Array(t.swatches(dark: scheme == .dark).enumerated()), id: \.offset) { _, c in
+									Circle().fill(c).frame(width: 12, height: 12)
+								}
+							}
+						}
+						Spacer()
+						if t.id == themeID { Image(systemName: "checkmark").foregroundStyle(t.accentColor) }
+					}
+				}
+			}
+		}
 	}
 }
 
 /// Кусочек кода в цветах темы.
 struct ThemePreview: View {
 	let theme: Theme
+	var dark = true
 
 	var body: some View {
-		let p = theme.style == .light ? theme.light : theme.dark
+		let p = theme.palette(dark: dark)
 		let c = { (v: UInt32) in Color(Theme.rgb(v)) }
 		VStack(alignment: .leading, spacing: 1) {
 			(Text("func ").foregroundColor(c(p.keyword)) + Text("hi").foregroundColor(c(p.fg))
@@ -467,6 +485,51 @@ struct ThemePreview: View {
 		.font(.system(size: 9, design: .monospaced))
 		.padding(6)
 		.frame(width: 118, alignment: .leading)
-		.background(theme.previewBg, in: RoundedRectangle(cornerRadius: 6))
+		.background(c(p.bg), in: RoundedRectangle(cornerRadius: 6))
+		.overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+	}
+}
+
+/// Оформление приложения: как в системе, светлое или тёмное.
+enum Appearance: String, CaseIterable {
+	case system, light, dark
+	static let key = "appearance"
+
+	var scheme: ColorScheme? {
+		switch self {
+		case .system: return nil
+		case .light: return .light
+		case .dark: return .dark
+		}
+	}
+
+	/// Стиль всем окнам сразу (и листам поверх): preferredColorScheme(nil) не всегда возвращает системное.
+	static func apply(_ raw: String) {
+		let a = Appearance(rawValue: raw) ?? .system
+		let style: UIUserInterfaceStyle = a == .light ? .light : a == .dark ? .dark : .unspecified
+		for scene in UIApplication.shared.connectedScenes {
+			(scene as? UIWindowScene)?.windows.forEach { $0.overrideUserInterfaceStyle = style }
+		}
+	}
+
+	var title: String {
+		switch self {
+		case .system: return L("System")
+		case .light: return L("Light")
+		case .dark: return L("Dark")
+		}
+	}
+}
+
+struct AppearancePicker: View {
+	@AppStorage(Appearance.key) private var appearance = Appearance.system.rawValue
+
+	var body: some View {
+		Picker(L("Appearance"), selection: $appearance) {
+			ForEach(Appearance.allCases, id: \.rawValue) { a in
+				Label(a.title, systemImage: a == .light ? "sun.max" : a == .dark ? "moon" : "circle.lefthalf.filled").tag(a.rawValue)
+			}
+		}
+		.pickerStyle(.segmented)
 	}
 }
