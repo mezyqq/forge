@@ -283,13 +283,13 @@ final class ProjectStore: ObservableObject {
 // MARK: шаблоны: iOS-приложения (как у ipab new) и скрипты, которые запускаются прямо в Forge
 
 enum Template: String, CaseIterable, Identifiable {
-	case python, js, web, lua, cscript, objc, c, objcpp, swift, swiftui, empty
+	case python, js, web, lua, cscript, cppscript, objc, game, c, objcpp, swift, swiftui, empty
 	var id: String { rawValue }
 
-	var isApp: Bool { [.objc, .c, .objcpp, .swift, .swiftui, .empty].contains(self) }
+	var isApp: Bool { [.objc, .game, .c, .objcpp, .swift, .swiftui, .empty].contains(self) }
 
-	static let scripts: [Template] = [.python, .js, .web, .lua, .cscript]
-	static let apps: [Template] = [.swiftui, .swift, .objc, .objcpp, .c, .empty]
+	static let scripts: [Template] = [.python, .js, .web, .lua, .cscript, .cppscript]
+	static let apps: [Template] = [.swiftui, .swift, .objc, .game, .objcpp, .c, .empty]
 
 	var title: String {
 		switch self {
@@ -298,6 +298,8 @@ enum Template: String, CaseIterable, Identifiable {
 		case .web: return L("Website (HTML/CSS/JS)")
 		case .lua: return "Lua"
 		case .cscript: return L("C (console)")
+		case .cppscript: return L("C++ (console, JIT)")
+		case .game: return L("Game (Objective-C)")
 		case .objc: return "Objective-C"
 		case .c: return L("C (UIKit via runtime)")
 		case .objcpp: return "Objective-C++"
@@ -310,6 +312,7 @@ enum Template: String, CaseIterable, Identifiable {
 	var file: String {
 		switch self {
 		case .objc: return "main.m"
+		case .game: return "main.m"
 		case .c: return "main.c"
 		case .objcpp: return "main.mm"
 		case .swift, .swiftui: return "App.swift"
@@ -455,13 +458,40 @@ enum Template: String, CaseIterable, Identifiable {
 
 			"""),
 		]
+		case .cppscript: return [
+			("main.cpp", """
+			// \(L("Run: the ▶ button. Real clang + JIT: C++20 and the standard library, running natively. Needs JIT enabled for Forge."))
+			#include <algorithm>
+			#include <iostream>
+			#include <map>
+			#include <string>
+			#include <vector>
+
+			int main() {
+				std::string name;
+				std::cout << "\(L("What is your name?")) ";
+				std::getline(std::cin, name);
+				std::cout << "\(L("Hello")), " << (name.empty() ? "\(L("world"))" : name) << "!\\n";
+
+				std::vector<int> v{5, 3, 9, 1, 7};
+				std::sort(v.begin(), v.end());
+				for (int x : v) std::cout << x << ' ';
+				std::cout << '\\n';
+
+				std::map<char, int> freq;
+				for (char c : name) freq[c]++;
+				for (auto [c, n] : freq) std::cout << c << ": " << n << '\\n';
+			}
+
+			"""),
+		]
 		default: return []
 		}
 	}
 
 	func conf(name: String) -> String {
 		let bid = name.lowercased().filter { $0.isLetter || $0.isNumber }
-		let fw = self == .swiftui ? "Foundation UIKit SwiftUI" : "Foundation UIKit"
+		let fw = self == .swiftui ? "Foundation UIKit SwiftUI" : self == .game ? "Foundation UIKit QuartzCore" : "Foundation UIKit"
 		return """
 		# \(L("Project config. It is bash — variables can be used."))
 		NAME="\(name)"
@@ -486,6 +516,32 @@ enum Template: String, CaseIterable, Identifiable {
 		case .objc: return """
 			#import <UIKit/UIKit.h>
 
+			@interface ViewController : UIViewController
+			@end
+
+			@implementation ViewController {
+				UILabel *_label;
+				NSInteger _taps;
+			}
+			- (void)viewDidLoad {
+				[super viewDidLoad];
+				self.view.backgroundColor = UIColor.systemBackgroundColor;
+				_label = [[UILabel alloc] initWithFrame:self.view.bounds];
+				_label.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+				_label.textAlignment = NSTextAlignmentCenter;
+				_label.text = @"\(L("Hello")) (ObjC)";
+				[self.view addSubview:_label];
+				[self.view addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tap)]];
+			}
+			- (void)tap {
+				_taps++;
+				_label.text = [NSString stringWithFormat:@"\(L("Tapped:")) %ld", (long)_taps];
+			}
+			@end
+
+			// \(L("Screen for the quick run in Forge (⋯ → Run in Forge): no install, right inside the IDE."))
+			UIViewController *forge_preview(void) { return [ViewController new]; }
+
 			@interface AppDelegate : UIResponder <UIApplicationDelegate>
 			@property (nonatomic, strong) UIWindow *window;
 			@end
@@ -493,14 +549,111 @@ enum Template: String, CaseIterable, Identifiable {
 			@implementation AppDelegate
 			- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
 				self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-				UIViewController *vc = [UIViewController new];
-				vc.view.backgroundColor = UIColor.systemBackgroundColor;
-				UILabel *l = [[UILabel alloc] initWithFrame:vc.view.bounds];
-				l.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-				l.textAlignment = NSTextAlignmentCenter;
-				l.text = @"\(L("Hello")) (ObjC)";
-				[vc.view addSubview:l];
-				self.window.rootViewController = vc;
+				self.window.rootViewController = [ViewController new];
+				[self.window makeKeyAndVisible];
+				return YES;
+			}
+			@end
+
+			int main(int argc, char *argv[]) {
+				@autoreleasepool {
+					return UIApplicationMain(argc, argv, nil, NSStringFromClass(AppDelegate.class));
+				}
+			}
+
+			"""
+		case .game: return """
+			// \(L("Mini game: catch the ball. CADisplayLink + drawing in drawRect:."))
+			#import <UIKit/UIKit.h>
+
+			@interface GameView : UIView
+			@end
+
+			@implementation GameView {
+				CADisplayLink *_link;
+				CGPoint _ball, _vel;
+				CGFloat _radius;
+				NSInteger _score;
+				CFTimeInterval _last;
+			}
+
+			- (instancetype)initWithFrame:(CGRect)f {
+				if ((self = [super initWithFrame:f])) {
+					self.backgroundColor = UIColor.blackColor;
+					_radius = 36;
+					_ball = CGPointMake(120, 220);
+					_vel = CGPointMake(240, 320);
+				}
+				return self;
+			}
+
+			// \(L("on screen — the game runs; removed — the timer stops (it retains self)"))
+			- (void)didMoveToWindow {
+				[super didMoveToWindow];
+				if (self.window && !_link) {
+					_last = 0;
+					_link = [CADisplayLink displayLinkWithTarget:self selector:@selector(step:)];
+					[_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+				} else if (!self.window) {
+					[_link invalidate];
+					_link = nil;
+				}
+			}
+
+			- (void)step:(CADisplayLink *)link {
+				CFTimeInterval dt = _last ? MIN(link.timestamp - _last, 1.0 / 30) : 0;
+				_last = link.timestamp;
+				_ball.x += _vel.x * dt;
+				_ball.y += _vel.y * dt;
+				CGSize s = self.bounds.size;
+				if (_ball.x < _radius) { _ball.x = _radius; _vel.x = fabs(_vel.x); }
+				if (_ball.x > s.width - _radius) { _ball.x = s.width - _radius; _vel.x = -fabs(_vel.x); }
+				if (_ball.y < _radius + 60) { _ball.y = _radius + 60; _vel.y = fabs(_vel.y); }
+				if (_ball.y > s.height - _radius) { _ball.y = s.height - _radius; _vel.y = -fabs(_vel.y); }
+				[self setNeedsDisplay];
+			}
+
+			- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+				CGPoint p = [touches.anyObject locationInView:self];
+				if (hypot(p.x - _ball.x, p.y - _ball.y) < _radius * 1.4) {
+					_score++;
+					double a = arc4random_uniform(360) * M_PI / 180, speed = hypot(_vel.x, _vel.y) * 1.1;
+					_vel = CGPointMake(cos(a) * speed, sin(a) * speed);
+				} else if (_score > 0) {
+					_score--;
+				}
+			}
+
+			- (void)drawRect:(CGRect)rect {
+				[UIColor.systemOrangeColor setFill];
+				[[UIBezierPath bezierPathWithOvalInRect:CGRectMake(_ball.x - _radius, _ball.y - _radius, _radius * 2, _radius * 2)] fill];
+				NSString *text = [NSString stringWithFormat:@"\(L("Score:")) %ld", (long)_score];
+				[text drawAtPoint:CGPointMake(20, 20) withAttributes:@{
+					NSFontAttributeName: [UIFont monospacedDigitSystemFontOfSize:28 weight:UIFontWeightBold],
+					NSForegroundColorAttributeName: UIColor.whiteColor,
+				}];
+			}
+			@end
+
+			@interface GameController : UIViewController
+			@end
+
+			@implementation GameController
+			- (void)loadView { self.view = [[GameView alloc] initWithFrame:UIScreen.mainScreen.bounds]; }
+			- (BOOL)prefersStatusBarHidden { return YES; }
+			@end
+
+			// \(L("Screen for the quick run in Forge (⋯ → Run in Forge): no install, right inside the IDE."))
+			UIViewController *forge_preview(void) { return [GameController new]; }
+
+			@interface AppDelegate : UIResponder <UIApplicationDelegate>
+			@property (nonatomic, strong) UIWindow *window;
+			@end
+
+			@implementation AppDelegate
+			- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
+				self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+				self.window.rootViewController = [GameController new];
 				[self.window makeKeyAndVisible];
 				return YES;
 			}

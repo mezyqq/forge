@@ -14,6 +14,9 @@ final class ToolBox {
 	let project: Project
 	unowned let store: ProjectStore
 	var todos: [Todo] = []
+	/// Исходное содержимое файлов, которые агент менял с последнего просмотра правок (text == nil — файла не было).
+	struct Original { let text: String? }
+	var originals: [String: Original] = [:]
 	/// Когда модель читала файл — edit/write существующего файла без чтения запрещены (как в opencode).
 	private var readAt: [String: Date] = [:]
 
@@ -88,6 +91,13 @@ final class ToolBox {
 		Use it to test your changes and to reproduce and fix errors.
 		""", ["filePath": prop("string", "Script path relative to the project root")], ["filePath"]),
 
+		tool("build", """
+		Builds the iOS app of this project (ipa.conf + src/) into build/<NAME>.ipa with Forge's on-device clang and lld, and returns
+		the result with compiler errors and warnings as <diagnostics> (path:line:col: severity: message).
+		Use it after changing C / Objective-C / C++ code of an iOS app, fix every error and build again until it succeeds.
+		Only for projects with ipa.conf; Swift is not compiled on the phone.
+		""", [:], []),
+
 		tool("todowrite", """
 		Create and maintain a structured task list for the current task. Use it proactively when the task has 3+ steps,
 		when the user gives several tasks, or asks for a plan. Keep exactly ONE item in_progress while work remains; mark items
@@ -120,7 +130,7 @@ final class ToolBox {
 			"list_files": "list", "ls": "list", "list_dir": "list", "tree": "list",
 			"find": "glob", "find_files": "glob", "search": "grep", "search_files": "grep", "ripgrep": "grep",
 			"rename": "move", "mv": "move", "remove": "delete", "rm": "delete", "delete_file": "delete",
-			"run_file": "run", "execute": "run", "exec": "run", "todo": "todowrite", "todo_write": "todowrite",
+			"run_file": "run", "execute": "run", "exec": "run", "build_app": "build", "compile": "build", "make": "build", "build_ipa": "build", "todo": "todowrite", "todo_write": "todowrite",
 			"fetch": "webfetch", "web_fetch": "webfetch",
 		]
 		return aliases[n]
@@ -204,6 +214,15 @@ final class ToolBox {
 
 	private func markRead(_ path: String) { readAt[path] = Date() }
 
+	/// Запомнить файл до первой правки агента (для «Просмотреть правки» → откатить).
+	private func remember(_ path: String) {
+		guard originals[path] == nil, let u = try? url(path) else { return }
+		var isDir: ObjCBool = false
+		if !FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir) { originals[path] = Original(text: nil); return }
+		guard !isDir.boolValue, let t = try? String(contentsOf: u, encoding: .utf8) else { return }
+		originals[path] = Original(text: t)
+	}
+
 	private func execute(_ name: String, _ input: [String: Any]) async throws -> (String, String) {
 		let fm = FileManager.default
 		switch name {
@@ -255,6 +274,7 @@ final class ToolBox {
 			let u = try url(path)
 			if !fm.fileExists(atPath: u.path) {
 				guard old.isEmpty else { throw StoreError("File not found: \(path). Use write to create a new file.") }
+				remember(path)
 				try store.write(path, new, in: project)
 				markRead(path)
 				return ("Created \(path).", L("creating %@", path))
@@ -262,10 +282,11 @@ final class ToolBox {
 			try requireRead(path, u)
 			let content = try store.read(path, in: project)
 			let updated = try Replace.replace(content, old, new, all: all)
+			remember(path)
 			try store.write(path, updated, in: project)
 			markRead(path)
 			let delta = updated.components(separatedBy: "\n").count - content.components(separatedBy: "\n").count
-			let diag = ToolBox.diagnostics(updated, path)
+			let diag = await diagnose(updated, path)
 			return ("Edit applied successfully." + diag.0, L("editing %@", path) + (delta == 0 ? "" : L(" (%@%@ lines)", delta > 0 ? "+" : "", delta)) + diag.1)
 
 		case "write":
@@ -275,10 +296,11 @@ final class ToolBox {
 			let u = try url(path)
 			let existed = fm.fileExists(atPath: u.path)
 			if existed { try requireRead(path, u) }
+			remember(path)
 			try store.write(path, content, in: project)
 			markRead(path)
 			let n = content.components(separatedBy: "\n").count
-			let diag = ToolBox.diagnostics(content, path)
+			let diag = await diagnose(content, path)
 			return ("Wrote \(path) (\(n) lines)." + diag.0, L(existed ? "overwriting %@ (%@ lines)" : "creating %@ (%@ lines)", path, n) + diag.1)
 
 		case "list":
@@ -334,6 +356,8 @@ final class ToolBox {
 
 		case "move":
 			let from = rel(try str(input, ["from", "source", "oldPath"])!), to = rel(try str(input, ["to", "destination", "newPath"])!)
+			remember(from)
+			remember(to)
 			try store.move(from, to: to, in: project)
 			if let t = readAt.removeValue(forKey: from) { readAt[to] = t }
 			return ("Moved \(from) → \(to)", L("moving %@ → %@", from, to))
@@ -341,16 +365,39 @@ final class ToolBox {
 		case "delete":
 			let path = rel(try str(input, ["path", "filePath", "file_path"])!)
 			guard !path.isEmpty else { throw ArgError(message: "refusing to delete the whole project") }
+			remember(path)
 			try store.remove(path, in: project)
 			return ("Deleted \(path)", L("deleting %@", path))
 
 		case "run":
 			let path = rel(try str(input, ["filePath", "path", "file_path"])!)
 			guard let kind = RunKind.detect(path), kind != .web else {
-				throw StoreError("run supports .py .js .lua .c files (HTML is previewed by the user)")
+				throw StoreError("run supports .py .js .lua .c (and .cpp .m .mm when native run is available) files (HTML is previewed by the user)")
 			}
 			let out = await Runner.shared.capture(try url(path))
 			return (out, L("running %@", path))
+
+		case "build":
+			guard fm.fileExists(atPath: project.url.appendingPathComponent("ipa.conf").path) else {
+				throw StoreError("This project has no ipa.conf — it is not an iOS app. Use run for scripts.")
+			}
+			guard IpaBuilder.available else {
+				throw StoreError("This Forge build has no on-device compiler — the user builds the app with ipab on a computer. Check your code carefully instead.")
+			}
+			let (out, code) = await Runner.shared.captureBuild(project.url)
+			let issues = Clang.issues(in: out)
+			let root = project.url.path + "/"
+			var text = code == 0 ? "Build succeeded: " + (out.components(separatedBy: "\n").last { $0.hasPrefix("==> done") } ?? "build/")
+			                     : "Build FAILED (exit code \(code))."
+			if !issues.isEmpty {
+				text += "\n<diagnostics>\n" + issues.prefix(50).map { i in
+					let f = i.file.hasPrefix(root) ? String(i.file.dropFirst(root.count)) : i.file
+					return (f.isEmpty ? "" : "\(f):\(i.line):\(i.col): ") + "\(i.severity): \(i.message)"
+				}.joined(separator: "\n") + "\n</diagnostics>"
+			}
+			if code != 0 { text += "\n\nBuild log (end):\n" + String(out.suffix(4000)) }
+			let errors = issues.filter(\.isError).count
+			return (text, code == 0 ? L("building the app — success") : L("building the app — %@ errors", max(errors, 1)))
 
 		case "todowrite":
 			guard let list = input["todos"] as? [[String: Any]] else { throw ArgError(message: "todos must be an array") }
@@ -386,6 +433,18 @@ final class ToolBox {
 	}
 
 	// MARK: помощники
+
+	/// Диагностика после правки: clang для C-семейства (если есть компилятор), иначе встроенные движки.
+	private func diagnose(_ text: String, _ path: String) async -> (String, String) {
+		let isApp = FileManager.default.fileExists(atPath: project.url.appendingPathComponent("ipa.conf").path)
+		guard IpaBuilder.available, Clang.supports(path), isApp || (path as NSString).pathExtension.lowercased() != "c",
+		      let u = try? url(path) else { return ToolBox.diagnostics(text, path) }
+		let errors = await Clang.check(text, file: u, project: project.url).filter(\.isError)
+		guard !errors.isEmpty else { return ("", "") }
+		let lines = errors.prefix(10).map { "line \($0.line):\($0.col): \($0.message)" }.joined(separator: "\n")
+		return ("\n\n<diagnostics file=\"\(path)\">\n\(lines)\n</diagnostics>\nFix these errors before continuing (unless a later planned edit fixes them).",
+		        L(" ⚠︎ errors: %@", errors.count))
+	}
 
 	/// Синтаксическая ошибка после правки — сразу сообщаем модели (как диагностика LSP в opencode).
 	static func diagnostics(_ text: String, _ path: String) -> (String, String) {

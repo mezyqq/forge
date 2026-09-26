@@ -4,3 +4,7 @@ releases/
 *.map
 # компилятор — отдельный репозиторий: git clone https://github.com/mezyqq/ios-compiler compiler
 compiler/
+
+# Claude Code
+CLAUDE.md
+.claude/

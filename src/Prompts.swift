@@ -117,7 +117,8 @@ enum Prompts {
 	- edit: exact string replacement (tolerant to small whitespace/indentation mistakes). write: create/overwrite a whole file.
 	- list / glob / grep: explore the project tree, find files by name, search contents by regex.
 	- move / delete: rename, move or remove files and folders.
-	- run: run a .py/.js/.lua/.c script and get its output — use it to test.
+	- run: run a .py/.js/.lua/.c script (and .cpp/.m when native run is available) and get its output — use it to test.
+	- build: build the iOS app (projects with ipa.conf) on the phone and get compiler errors — use it after changing app code.
 	- todowrite: plan and track multi-step work. webfetch: read documentation pages.
 	All paths are relative to the project root. There is no shell, no package manager and no network access for scripts.
 	"""
@@ -128,14 +129,15 @@ enum Prompts {
 	- Python: pocketpy — a Python 3 subset, no pip, small stdlib (math, random, json, time, collections…). input() works only for the user.
 	- JavaScript: JavaScriptCore, not Node — no fs/http/npm. console.*, prompt(), CommonJS require('./file'), setTimeout/setInterval.
 	- Lua 5.4 with standard libraries; require looks next to the script.
-	- C: picoc interpreter — most of C89 with stdio/stdlib/string/math. Declare struct fields one per line.
+	- C: picoc interpreter — most of C89 with stdio/stdlib/string/math. Declare struct fields one per line. When native run is available (see <env>), .c/.cpp/.m/.mm scripts are compiled with real clang and run natively instead (full C17/C++20, Foundation).
 	- HTML/CSS/JS: opened in a live WebView preview by the user.
 
 	iOS apps (projects with ipa.conf) are built into .ipa:
 	- ipa.conf — bash variables NAME, DISPLAY_NAME, BUNDLE_ID, VERSION, BUILD, MIN_IOS, FRAMEWORKS (space-separated), LIBS, CFLAGS, LDFLAGS, ICON, ENTITLEMENTS (and SWIFTFLAGS, BRIDGING_HEADER for Swift).
 	- src/ — .c .m .mm .cpp .swift sources (recursively; ObjC uses ARC). res/ — copied into the .app root. Info.extra.plist — extra Info.plist keys.
 	- No storyboards, xibs or .xcassets: build UI in code, load images from res/. Guard newer APIs with @available/#available and add used frameworks to FRAMEWORKS.
-	- Forge's on-device compiler builds C/Objective-C/C++ only; Swift projects are built on a computer with ipab. Write code that compiles on the first try.
+	- Forge's on-device compiler builds C/Objective-C/C++ only; Swift projects are built on a computer with ipab. Write code that compiles on the first try, then verify it with the build tool when it is available.
+	- Quick run without installing: if the app defines `UIViewController *forge_preview(void)`, the user can open that screen right inside Forge (⋯ → Run in Forge). Keep such a function in ObjC apps (return the root view controller).
 
 	Git and GitHub are handled by the user in Forge's GitHub screen (commit, push, pull). Never try to run git.
 	"""
@@ -152,6 +154,8 @@ enum Prompts {
 		  Project: \(project.name) (tool paths are relative to its root)
 		  Platform: iOS (Forge app on the user's device)
 		  Linked to GitHub: \(git)
+		  On-device compiler (build tool): \(IpaBuilder.available ? "yes" : "no")
+		  Native run of C/C++/ObjC scripts (clang + JIT): \(Clang.canJIT ? "yes" : "no — .c runs in picoc")
 		  Today's date: \(df.string(from: Date()))
 		</env>
 		<project_tree>

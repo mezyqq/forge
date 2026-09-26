@@ -9,6 +9,15 @@ final class EditorHandle {
 		tv?.findInteraction?.presentFindNavigator(showingReplace: replace)
 	}
 
+	/// Заменить весь текст (с отменой), курсор — примерно на прежнем месте.
+	func replaceAll(with s: String) {
+		guard let tv, let all = tv.textRange(from: tv.beginningOfDocument, to: tv.endOfDocument) else { return }
+		let sel = tv.selectedRange
+		tv.replace(all, withText: s)
+		tv.selectedRange = NSRange(location: min(sel.location, (s as NSString).length), length: 0)
+		tv.delegate?.textViewDidChange?(tv)
+	}
+
 	func go(toLine n: Int) {
 		guard let tv else { return }
 		let ns = tv.text as NSString
@@ -33,6 +42,8 @@ struct CodeEditor: UIViewRepresentable {
 	let lineNumbers: Bool
 	var theme: Theme = Theme.all[0]
 	var errorLine: Int? = nil
+	/// Автодополнение (clang): текст и позиция курсора (UTF-16) → варианты. nil — выключено.
+	var completer: ((String, Int) async -> [Clang.Completion])? = nil
 	let handle: EditorHandle
 
 	func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -57,7 +68,10 @@ struct CodeEditor: UIViewRepresentable {
 		tv.alwaysBounceVertical = true
 		tv.isFindInteractionEnabled = true
 		tv.delegate = context.coordinator
-		tv.inputAccessoryView = KeyBar(target: tv)
+		let coord = context.coordinator
+		tv.inputAccessoryView = KeyBar(target: tv, complete: completer == nil ? nil : { [weak tv, weak coord] in
+			if let tv { coord?.scheduleCompletion(tv, force: true) }
+		})
 		handle.tv = tv
 		apply(tv, force: true)
 		return tv
@@ -94,6 +108,48 @@ struct CodeEditor: UIViewRepresentable {
 			Syntax.highlight(tv, lang: parent.lang, size: parent.fontSize, theme: parent.theme)
 			(tv as? CodeTextView)?.updateGutter()
 			parent.text = tv.text
+			scheduleCompletion(tv)
+		}
+
+		func textViewDidChangeSelection(_ tv: UITextView) {
+			// курсор ушёл с дополняемого слова — прячем список
+			guard let ctv = tv as? CodeTextView, let r = ctv.completionRange else { return }
+			if tv.selectedRange.length > 0 || tv.selectedRange.location < r.location || tv.selectedRange.location > r.location + r.length + 1 {
+				ctv.hideCompletions()
+			}
+		}
+
+		func scrollViewDidScroll(_ sv: UIScrollView) {
+			if sv.isDragging || sv.isDecelerating { (sv as? CodeTextView)?.hideCompletions() }
+		}
+
+		func textViewDidEndEditing(_ tv: UITextView) { (tv as? CodeTextView)?.hideCompletions() }
+
+		private var completionTask: Task<Void, Never>?
+
+		/// Автодополнение после паузы: от двух букв идентификатора, после «.» и «->»; force — по кнопке.
+		func scheduleCompletion(_ tv: UITextView, force: Bool = false) {
+			completionTask?.cancel()
+			guard let completer = parent.completer, let ctv = tv as? CodeTextView else { return }
+			if ctv.justAccepted { ctv.justAccepted = false; return }
+			let sel = tv.selectedRange
+			guard sel.length == 0 else { ctv.hideCompletions(); return }
+			let ns = tv.text as NSString
+			var start = sel.location
+			while start > 0, let u = UnicodeScalar(ns.character(at: start - 1)), u == "_" || CharacterSet.alphanumerics.contains(u), u.isASCII { start -= 1 }
+			let prefix = ns.substring(with: NSRange(location: start, length: sel.location - start))
+			let before = start > 0 ? ns.character(at: start - 1) : 0
+			let member = before == 46 || (before == 62 && start >= 2 && ns.character(at: start - 2) == 45)  // . или ->
+			guard force || prefix.count >= 2 || member, !(prefix.first?.isNumber ?? false) else { ctv.hideCompletions(); return }
+			let text = tv.text ?? "", offset = sel.location
+			completionTask = Task { @MainActor in
+				if !force { try? await Task.sleep(nanoseconds: 350_000_000) }
+				guard !Task.isCancelled else { return }
+				let items = await completer(text, offset)
+				guard !Task.isCancelled, tv.text == text, tv.selectedRange.location == offset else { return }
+				let p = prefix.lowercased()
+				ctv.showCompletions(items.filter { p.isEmpty || $0.name.lowercased().hasPrefix(p) }, replacing: NSRange(location: start, length: offset - start))
+			}
 		}
 
 		// Enter: повторяем отступ строки, после «{ ( [ :» — на таб больше
@@ -119,6 +175,74 @@ final class CodeTextView: UITextView {
 	var theme = Theme.all[0]
 	var errorLine: Int?
 	private var gutter: CGFloat = 0
+
+	// автодополнение
+	private(set) var completionRange: NSRange?
+	private var completionList: CompletionList?
+	var justAccepted = false
+
+	func showCompletions(_ items: [Clang.Completion], replacing r: NSRange) {
+		guard !items.isEmpty, let pos = selectedTextRange?.end else { hideCompletions(); return }
+		completionRange = r
+		let list = completionList ?? CompletionList { [weak self] in self?.accept($0) }
+		// в родителе, а не в самом UITextView: иначе его жесты выделения перехватывают нажатия по списку
+		let host = superview ?? self
+		completionList = list
+		if list.superview !== host { list.removeFromSuperview(); host.addSubview(list) }
+		list.items = items
+		let caret = caretRect(for: pos)
+		let rowH: CGFloat = 34
+		let h = rowH * CGFloat(min(items.count, 6)), w = min(bounds.width - 16, 380)
+		var y = caret.maxY + 4
+		// не влезает над клавиатурой — показываем над курсором
+		if y + h > contentOffset.y + bounds.height - adjustedContentInset.bottom { y = caret.minY - h - 4 }
+		list.frame = convert(CGRect(x: max(8, min(caret.minX - 24, bounds.width - w - 8)), y: y, width: w, height: h), to: host)
+		host.bringSubviewToFront(list)
+		list.rowHeight = rowH
+		list.fontSize = fontSize
+		list.reloadData()
+		list.setContentOffset(.zero, animated: false)
+		list.isHidden = false
+	}
+
+	func hideCompletions() {
+		completionRange = nil
+		completionList?.isHidden = true
+	}
+
+	/// Вставка варианта вместо набранного префикса; первый параметр <#…#> выделяется.
+	private func accept(_ c: Clang.Completion) {
+		guard let r = completionRange, r.location + r.length <= (text as NSString).length else { hideCompletions(); return }
+		hideCompletions()
+		justAccepted = true
+		let ins = c.insert.isEmpty ? c.name : c.insert
+		selectedRange = r
+		insertText(ins)
+		let p = (ins as NSString).range(of: "<#")
+		if p.location != NSNotFound {
+			let e = (ins as NSString).range(of: "#>", range: NSRange(location: p.location, length: (ins as NSString).length - p.location))
+			if e.location != NSNotFound { selectedRange = NSRange(location: r.location + p.location, length: e.location + 2 - p.location) }
+		}
+	}
+
+	/// Выделить следующий параметр <#…#> на текущей строке; false — нет такого.
+	func selectNextPlaceholder() -> Bool {
+		let ns = text as NSString
+		let from = selectedRange.location + selectedRange.length
+		let line = ns.lineRange(for: NSRange(location: min(from, ns.length), length: 0))
+		var search = NSRange(location: from, length: max(0, line.location + line.length - from))
+		var p = ns.range(of: "<#", range: search)
+		if p.location == NSNotFound {
+			// курсор уже за последним — с начала строки
+			search = NSRange(location: line.location, length: line.length)
+			p = ns.range(of: "<#", range: search)
+		}
+		guard p.location != NSNotFound else { return false }
+		let e = ns.range(of: "#>", range: NSRange(location: p.location, length: line.location + line.length - p.location))
+		guard e.location != NSNotFound else { return false }
+		selectedRange = NSRange(location: p.location, length: e.location + 2 - p.location)
+		return true
+	}
 
 	func apply(_ t: Theme) {
 		theme = t
@@ -196,7 +320,7 @@ final class CodeTextView: UITextView {
 
 /// Панель над клавиатурой: отмена/повтор, таб и символы, которых нет на первом экране iOS-клавиатуры.
 final class KeyBar: UIInputView {
-	init(target: UITextView) {
+	init(target: UITextView, complete: (() -> Void)? = nil) {
 		super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 46), inputViewStyle: .keyboard)
 		autoresizingMask = .flexibleWidth
 
@@ -219,7 +343,12 @@ final class KeyBar: UIInputView {
 
 		stack.addArrangedSubview(button(image: "arrow.uturn.backward") { [weak target] in target?.undoManager?.undo() })
 		stack.addArrangedSubview(button(image: "arrow.uturn.forward") { [weak target] in target?.undoManager?.redo() })
-		stack.addArrangedSubview(button("⇥") { [weak target] in target?.insertText("\t") })
+		// ⇥: сначала — к следующему параметру <#…#> автодополнения, иначе таб
+		stack.addArrangedSubview(button("⇥") { [weak target] in
+			if (target as? CodeTextView)?.selectNextPlaceholder() == true { return }
+			target?.insertText("\t")
+		})
+		if let complete { stack.addArrangedSubview(button(image: "text.badge.plus") { complete() }) }
 		for k in ["{", "}", "(", ")", "[", "]", ";", "\"", "=", "<", ">", "*", "&", "|", "!", "#", "@", "_", "/", "\\",
 		          ":", "'", "+", "-", "%", "^", "~", "$", "`", "?"] {
 			stack.addArrangedSubview(button(k) { [weak target] in target?.insertText(k) })
@@ -246,4 +375,76 @@ final class KeyBar: UIInputView {
 	}
 
 	required init?(coder: NSCoder) { fatalError() }
+}
+
+/// Всплывающий список автодополнения под курсором.
+final class CompletionList: UITableView, UITableViewDataSource, UITableViewDelegate {
+	var items: [Clang.Completion] = []
+	var fontSize: CGFloat = 14
+	private let onPick: (Clang.Completion) -> Void
+
+	init(onPick: @escaping (Clang.Completion) -> Void) {
+		self.onPick = onPick
+		super.init(frame: .zero, style: .plain)
+		dataSource = self
+		delegate = self
+		layer.cornerRadius = 10
+		layer.borderWidth = 0.5
+		layer.borderColor = UIColor.separator.cgColor
+		backgroundColor = .secondarySystemBackground
+		separatorStyle = .none
+		register(UITableViewCell.self, forCellReuseIdentifier: "c")
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func tableView(_ t: UITableView, numberOfRowsInSection s: Int) -> Int { items.count }
+
+	func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {
+		let cell = t.dequeueReusableCell(withIdentifier: "c", for: ip)
+		let c = items[ip.row]
+		var cfg = UIListContentConfiguration.valueCell()
+		let (icon, color) = CompletionList.style(c.kind)
+		cfg.image = UIImage(systemName: icon)
+		cfg.imageProperties.tintColor = color
+		cfg.imageProperties.maximumSize = CGSize(width: 18, height: 18)
+		let label = NSMutableAttributedString(string: c.label.isEmpty ? c.name : c.label,
+		                                      attributes: [.font: UIFont.monospacedSystemFont(ofSize: fontSize * 0.9, weight: .regular),
+		                                                   .foregroundColor: UIColor.secondaryLabel])
+		let nameRange = (label.string as NSString).range(of: c.name)
+		if nameRange.location != NSNotFound {
+			label.addAttributes([.foregroundColor: UIColor.label, .font: UIFont.monospacedSystemFont(ofSize: fontSize * 0.9, weight: .semibold)], range: nameRange)
+		}
+		cfg.attributedText = label
+		cfg.textProperties.numberOfLines = 1
+		cfg.textProperties.lineBreakMode = .byTruncatingTail
+		cfg.secondaryText = c.result
+		cfg.secondaryTextProperties.font = .monospacedSystemFont(ofSize: fontSize * 0.75, weight: .regular)
+		cfg.secondaryTextProperties.color = .tertiaryLabel
+		cfg.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+		cell.contentConfiguration = cfg
+		cell.backgroundColor = .clear
+		return cell
+	}
+
+	func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
+		t.deselectRow(at: ip, animated: false)
+		onPick(items[ip.row])
+	}
+
+	/// Значок по виду объявления clang.
+	static func style(_ kind: String) -> (String, UIColor) {
+		switch kind {
+		case "Function", "FunctionTemplate": return ("f.square.fill", .systemPurple)
+		case "ObjCMethod", "CXXMethod", "CXXConstructor": return ("m.square.fill", .systemBlue)
+		case "ObjCProperty", "Field", "ObjCIvar": return ("p.square.fill", .systemTeal)
+		case "Var", "ParmVar": return ("v.square.fill", .systemGreen)
+		case "EnumConstant": return ("e.square.fill", .systemOrange)
+		case "Typedef", "Record", "CXXRecord", "Enum", "ObjCInterface", "ObjCProtocol", "ClassTemplate", "TypeAlias":
+			return ("t.square.fill", .systemPink)
+		case "macro": return ("number.square.fill", .systemBrown)
+		case "keyword": return ("k.square.fill", .systemGray)
+		default: return ("chevron.left.forwardslash.chevron.right", .systemGray)
+		}
+	}
 }

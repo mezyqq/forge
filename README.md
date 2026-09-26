@@ -26,15 +26,22 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
 
 ## Features
 
-- **Projects** in Documents (visible in the Files app): templates for Python, JavaScript, website, Lua, C (console)
-  and iOS apps (SwiftUI, Swift, ObjC, ObjC++, C). Folder tree, file import, project-wide search, zip.
+- **Projects** in Documents (visible in the Files app): templates for Python, JavaScript, website, Lua, C and C++
+  (console) and iOS apps (SwiftUI, Swift, ObjC, an ObjC game, ObjC++, C). Folder tree, file import, project-wide search, zip.
 - **Editor**: highlighting for ~20 languages, themes (Xcode, orange, purple, pink, Monokai, Nord, Matrix, Ocean,
-  Solarized), line numbers, find/replace, live syntax checking (Python, JS, Lua, C, JSON).
+  Solarized), line numbers, find/replace, live syntax checking (Python, JS, Lua, C, JSON). With the built-in compiler, C / ObjC / C++
+  files get real clang diagnostics, clang autocompletion with parameter placeholders (⇥ jumps to the next one) and
+  clang-format (a `.clang-format` in the project root is respected).
 - **Running without JIT**: Python (pocketpy), JavaScript (JavaScriptCore), Lua 5.4, C (picoc), live HTML preview.
   A console with input and a Stop button.
-- **Building .ipa on the phone**: C, Objective-C, C++ with the built-in clang + lld (see below).
-- **AI agent** based on opencode's ideas: streaming, read/edit/write/glob/grep/list/run/todowrite/webfetch tools,
-  forgiving replacement in edit, a task plan, loop protection, syntax diagnostics after edits.
+- **Native run with JIT** (compiler + JIT enabled for Forge): `.c`, `.cpp`, `.m` scripts are compiled by clang and
+  run natively; an iOS project can be run right inside Forge without installing (see below).
+- **Building .ipa on the phone**: C, Objective-C, C++ with the built-in clang + lld: a tappable list of errors, one-tap
+  install into LiveContainer (see below).
+- **AI agent** based on opencode's ideas: streaming, read/edit/write/glob/grep/list/run/build/todowrite/webfetch
+  tools, forgiving replacement in edit, a task plan, loop protection, diagnostics after edits (clang for C-family
+  code). `build` lets the agent build the app and fix compiler errors itself. Every file the agent touched can be
+  reviewed as a diff and kept or reverted (the “Files changed” bar in the chat).
   Any provider: OpenAI-compatible and Anthropic. Free and without a key out of the box: Pollinations (default)
   and LLM7 (GLM-5.3-Flash, MiniMax-M2.7, Codestral).
 - **GitHub** over the API (no git): clone, commit and push, pull changes, branches, history with diffs,
@@ -70,8 +77,15 @@ Settings → Debugging → Crash log → report → Share. Decode it on the comp
 The 🔨 button of an iOS project (one with `ipa.conf`) builds a C / Objective-C / C++ app into an `.ipa` right on the
 phone: the built-in clang and lld from [ios-compiler](https://github.com/mezyqq/ios-compiler), with a trimmed iOS SDK
 inside the bundle. Same `ipa.conf`, `src/`, `res/`, `Info.plist` as ipab; the result is `build/<NAME>.ipa`, then
-Share → LiveContainer. Builds are incremental; the project menu has "Build release" (version +1). Swift is not compiled
-on the phone — build such projects with ipab on a computer.
+Install in LiveContainer (Forge serves the `.ipa` on 127.0.0.1 and opens `livecontainer://install`), then Open, or Share.
+Compiler errors are listed under the log — tap one to open the file at that line. Builds are incremental; the project
+menu has "Build release" (version +1). Swift is not compiled on the phone — build such projects with ipab on a computer.
+
+**Run in Forge (JIT, no install)** — project menu. The sources are compiled and linked straight into Forge's memory
+(ORC JIT); this needs JIT enabled for Forge. If the project defines `UIViewController *forge_preview(void)`, that
+screen is shown inside Forge (the ObjC and game templates have it); otherwise `main()` runs in the console.
+Objective-C classes and selectors are registered, static constructors run; categories, `+load` and C++ exceptions
+are not supported there.
 
 For the compiler to be included in Forge, build it next to it (otherwise Forge is built without it):
 

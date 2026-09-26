@@ -25,6 +25,7 @@ final class Agent: ObservableObject {
 	@Published private(set) var liveReasoning = ""   // размышления модели (если провайдер их отдаёт)
 	@Published private(set) var status = ""
 	@Published private(set) var todos: [Todo] = []
+	@Published private(set) var changed: [String] = []  // файлы, которые агент поменял с последнего просмотра правок
 
 	let project: Project
 	private unowned let store: ProjectStore
@@ -65,8 +66,38 @@ final class Agent: ObservableObject {
 		items = []
 		todos = []
 		toolbox.todos = []
+		toolbox.originals = [:]
+		changed = []
 		system = nil
 		try? FileManager.default.removeItem(at: chatURL)
+	}
+
+	// MARK: просмотр правок
+
+	/// Содержимое файла до первой правки агента: .some(nil) — файла не было, nil — файл не менялся.
+	func original(_ path: String) -> String?? { toolbox.originals[path].map(\.text) }
+
+	func keep(_ path: String) {
+		toolbox.originals[path] = nil
+		changed = toolbox.originals.keys.sorted()
+	}
+
+	/// Текущее содержимое файла проекта (nil — нет или не текст).
+	func current(_ path: String) -> String? { try? store.read(path, in: project) }
+
+	func keepAll() {
+		toolbox.originals = [:]
+		changed = []
+	}
+
+	/// Вернуть файл к версии до агента (или удалить, если агент его создал).
+	func revert(_ path: String) throws {
+		guard let o = toolbox.originals[path] else { return }
+		if let t = o.text { try store.write(path, t, in: project) }
+		else if (try? store.resolve(path, in: project)).map({ FileManager.default.fileExists(atPath: $0.path) }) == true { try store.remove(path, in: project) }
+		keep(path)
+		items.append(.init(.info, L("Reverted %@", path)))
+		save()
 	}
 
 	private func start() {
@@ -173,6 +204,7 @@ final class Agent: ObservableObject {
 						}
 						items.append(.init(.tool, res.summary, detail: String(res.output.prefix(6000)), failed: res.isError))
 						if ToolBox.canonical(name) == "todowrite" { todos = toolbox.todos }
+						changed = toolbox.originals.keys.sorted()
 						results.append(["type": "tool_result", "tool_use_id": id, "content": res.output, "is_error": res.isError])
 					default: break
 					}

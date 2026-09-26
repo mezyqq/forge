@@ -13,6 +13,7 @@ struct ProjectView: View {
 	@State private var showGit = false
 	@State private var run: RunTarget?
 	@State private var building: BuildTarget?
+	@State private var quickRun = false
 	@State private var error: String?
 
 	/// iOS-приложение (есть ipa.conf) — главная кнопка собирает .ipa, а не запускает скрипт.
@@ -64,6 +65,11 @@ struct ProjectView: View {
 				Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
 				Menu {
 					Button { showConf = true } label: { Label(L("Project settings"), systemImage: "slider.horizontal.3") }
+					if isApp && IpaBuilder.available {
+						Button { quickRun = true } label: {
+							Label(L("Run in Forge (JIT, no install)"), systemImage: "bolt.fill")
+						}
+					}
 					if isApp {
 						Button { buildApp(release: true) } label: {
 							Label(L("Build release (version +1)"), systemImage: "shippingbox")
@@ -89,6 +95,7 @@ struct ProjectView: View {
 		.sheet(isPresented: $showGit) { GitView(project: project) }
 		.fullScreenCover(item: $run) { RunSheet(target: $0) }
 		.fullScreenCover(item: $building) { BuildView(project: project.url, release: $0.release) }
+		.fullScreenCover(isPresented: $quickRun) { QuickRunView(project: project.url) }
 		.confirmationDialog(L("Clear the chat history?"), isPresented: $confirmReset, titleVisibility: .visible) {
 			Button(L("Clear"), role: .destructive) { store.agent(for: project).reset() }
 		}
@@ -225,8 +232,16 @@ struct EditorScreen: View {
 	@State private var prompt: Prompt?
 	@State private var error: String?
 	@State private var run: RunTarget?
+	@AppStorage("autocomplete") private var autocomplete = true
 
 	private var lang: Lang { Lang.detect(path) }
+	private var isApp: Bool { FileManager.default.fileExists(atPath: project.url.appendingPathComponent("ipa.conf").path) }
+	/// Проверка и автодополнение встроенным clang (в iOS-проекте — все C-файлы, в скриптовом — кроме .c для picoc).
+	private var useClang: Bool {
+		IpaBuilder.available && Clang.supports(path) && (isApp || (path as NSString).pathExtension.lowercased() != "c")
+	}
+	/// ▶ у файла: скрипты; исходники iOS-приложения запускаются целиком (сборка или JIT-запуск проекта).
+	private var canRun: Bool { RunKind.detect(path) != nil && !(isApp && path.hasPrefix("src/")) }
 
 	var body: some View {
 		Group {
@@ -234,7 +249,8 @@ struct EditorScreen: View {
 				BinaryPreview(url: (try? store.resolve(path, in: project)))
 			} else {
 				CodeEditor(text: $text, lang: lang, fontSize: CGFloat(fontSize), lineNumbers: lineNumbers,
-				           theme: Theme.find(themeID), errorLine: diag?.line, handle: handle)
+				           theme: Theme.find(themeID), errorLine: diag?.line,
+				           completer: useClang && autocomplete ? complete : nil, handle: handle)
 					.ignoresSafeArea(.container, edges: .bottom)
 					.safeAreaInset(edge: .bottom) {
 						if let d = diag {
@@ -261,7 +277,7 @@ struct EditorScreen: View {
 		.toolbar {
 			if !binary {
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
-					if RunKind.detect(path) != nil {
+					if canRun {
 						Button {
 							saveTask?.cancel()
 							save()
@@ -279,8 +295,12 @@ struct EditorScreen: View {
 						Button { fontSize = min(28, fontSize + 1) } label: { Label(L("Larger"), systemImage: "textformat.size.larger") }
 						Button { fontSize = max(9, fontSize - 1) } label: { Label(L("Smaller"), systemImage: "textformat.size.smaller") }
 						Toggle(isOn: $lineNumbers) { Label(L("Line numbers"), systemImage: "list.number") }
-						if SyntaxCheck.supports(path) {
+						if SyntaxCheck.supports(path) || useClang {
 							Toggle(isOn: $syntaxCheck) { Label(L("Syntax checking"), systemImage: "checkmark.shield") }
+						}
+						if useClang {
+							Toggle(isOn: $autocomplete) { Label(L("Autocomplete (clang)"), systemImage: "text.badge.plus") }
+							Button(action: format) { Label(L("Format (clang-format)"), systemImage: "text.alignleft") }
 						}
 						Button { UIPasteboard.general.string = text } label: { Label(L("Copy all"), systemImage: "doc.on.doc") }
 						Section(lang.name) {}
@@ -305,7 +325,7 @@ struct EditorScreen: View {
 			guard loaded, !binary else { return }
 			dirty = true
 			saveTask?.cancel()
-			scheduleCheck(delay: 0.7)
+			scheduleCheck(delay: useClang ? 1.2 : 0.7)
 			saveTask = Task {
 				try? await Task.sleep(nanoseconds: 400_000_000)
 				if !Task.isCancelled { save() }
@@ -332,12 +352,36 @@ struct EditorScreen: View {
 	/// Проверка синтаксиса после паузы в наборе.
 	private func scheduleCheck(delay: Double) {
 		checkTask?.cancel()
-		guard syntaxCheck, !binary, SyntaxCheck.supports(path) else { diag = nil; return }
+		guard syntaxCheck, !binary, useClang || SyntaxCheck.supports(path) else { diag = nil; return }
+		let clang = useClang
 		checkTask = Task {
 			if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
 			guard !Task.isCancelled else { return }
 			CrashLog.crumb("проверка синтаксиса: \(path)")
-			diag = SyntaxCheck.check(text, path: path)
+			if clang {
+				guard let u = try? store.resolve(path, in: project) else { return }
+				let errors = await Clang.check(text, file: u, project: project.url).filter(\.isError)
+				guard !Task.isCancelled else { return }
+				diag = errors.first.map { Diagnostic(line: $0.line, message: $0.message + (errors.count > 1 ? L(" (+%@ more)", errors.count - 1) : "")) }
+			} else {
+				diag = SyntaxCheck.check(text, path: path)
+			}
+		}
+	}
+
+	private func complete(_ text: String, _ offset: Int) async -> [Clang.Completion] {
+		guard let u = try? store.resolve(path, in: project) else { return [] }
+		return await Clang.complete(text, offset: offset, file: u, project: project.url)
+	}
+
+	private func format() {
+		guard let u = try? store.resolve(path, in: project) else { return }
+		let src = text
+		Task {
+			do {
+				let out = try await Clang.format(src, file: u, project: project.url)
+				if out != text, text == src { handle.replaceAll(with: out) }
+			} catch { self.error = error.localizedDescription }
 		}
 	}
 }

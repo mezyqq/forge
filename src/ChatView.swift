@@ -6,12 +6,14 @@ struct ChatView: View {
 	@ObservedObject private var ps = Providers.shared
 	@State private var input = ""
 	@State private var showTodos = true
+	@State private var showReview = false
 
 	var body: some View {
 		VStack(spacing: 0) {
 			modelBar
 			Divider()
 			if !agent.todos.isEmpty { todoPanel; Divider() }
+			if !agent.changed.isEmpty && !agent.busy { changesBar; Divider() }
 			ScrollViewReader { proxy in
 				ScrollView {
 					LazyVStack(alignment: .leading, spacing: 10) {
@@ -62,6 +64,21 @@ struct ChatView: View {
 			}
 			.padding(8)
 		}
+		.sheet(isPresented: $showReview) { ReviewView(agent: agent) }
+	}
+
+	/// Файлы, которые поменял агент: просмотреть дифф, оставить или откатить.
+	private var changesBar: some View {
+		HStack(spacing: 8) {
+			Image(systemName: "doc.badge.gearshape")
+			Text(L("Files changed: %@", agent.changed.count)).font(.footnote.bold())
+			Spacer()
+			Button(L("Keep all")) { agent.keepAll() }.font(.footnote)
+			Button(L("Review")) { showReview = true }.font(.footnote.bold())
+		}
+		.padding(.horizontal)
+		.padding(.vertical, 6)
+		.background(Color(.secondarySystemBackground))
 	}
 
 	/// План задач, который ведёт модель через todowrite.
@@ -250,5 +267,94 @@ struct CodeBlock: View {
 				Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.caption).padding(8)
 			}
 		}
+	}
+}
+
+// MARK: просмотр правок агента
+
+/// Список файлов, которые поменял агент: дифф относительно версии до агента, «Оставить» / «Откатить».
+struct ReviewView: View {
+	@ObservedObject var agent: Agent
+	@Environment(\.dismiss) private var dismiss
+	@State private var confirmRevertAll = false
+	@State private var error: String?
+
+	var body: some View {
+		NavigationStack {
+			List {
+				ForEach(agent.changed, id: \.self) { path in
+					NavigationLink { ChangeDiffView(agent: agent, path: path) } label: { row(path) }
+						.swipeActions(edge: .trailing) {
+							Button(role: .destructive) { revert(path) } label: { Label(L("Revert"), systemImage: "arrow.uturn.backward") }
+							Button { agent.keep(path) } label: { Label(L("Keep"), systemImage: "checkmark") }.tint(.green)
+						}
+				}
+			}
+			.overlay { if agent.changed.isEmpty { Text(L("No changes to review")).foregroundStyle(.secondary) } }
+			.navigationTitle(L("Changes by AI"))
+			.navigationBarTitleDisplayMode(.inline)
+			.toolbar {
+				ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
+				ToolbarItem(placement: .confirmationAction) {
+					Menu {
+						Button { agent.keepAll(); dismiss() } label: { Label(L("Keep all"), systemImage: "checkmark") }
+						Button(role: .destructive) { confirmRevertAll = true } label: { Label(L("Revert all"), systemImage: "arrow.uturn.backward") }
+					} label: { Image(systemName: "ellipsis.circle") }
+				}
+			}
+			.confirmationDialog(L("Revert all changes made by the AI?"), isPresented: $confirmRevertAll, titleVisibility: .visible) {
+				Button(L("Revert all"), role: .destructive) {
+					for p in agent.changed { revert(p) }
+					if agent.changed.isEmpty { dismiss() }
+				}
+			}
+			.errorAlert($error)
+		}
+	}
+
+	private func row(_ path: String) -> some View {
+		let before = agent.original(path) ?? nil
+		let now = agent.current(path)
+		let rows = Diff.rows(before ?? "", now ?? "", context: 0)
+		let plus = rows.filter { $0.kind == "+" }.count, minus = rows.filter { $0.kind == "-" }.count
+		return HStack {
+			Image(systemName: before == nil ? "doc.badge.plus" : now == nil ? "trash" : "pencil")
+				.foregroundStyle(before == nil ? Color.green : now == nil ? Color.red : Color.orange)
+			Text(path).font(.footnote.monospaced()).lineLimit(1).truncationMode(.middle)
+			Spacer()
+			Text("+\(plus)").font(.caption.monospaced()).foregroundStyle(.green)
+			Text("−\(minus)").font(.caption.monospaced()).foregroundStyle(.red)
+		}
+	}
+
+	private func revert(_ path: String) {
+		do { try agent.revert(path) } catch { self.error = error.localizedDescription }
+	}
+}
+
+struct ChangeDiffView: View {
+	@ObservedObject var agent: Agent
+	let path: String
+	@Environment(\.dismiss) private var dismiss
+	@State private var error: String?
+
+	var body: some View {
+		let rows = Diff.rows((agent.original(path) ?? nil) ?? "", agent.current(path) ?? "")
+		ScrollView {
+			if rows.isEmpty { Text(L("No text differences")).foregroundStyle(.secondary).padding() }
+			DiffLines(rows: rows)
+		}
+		.navigationTitle((path as NSString).lastPathComponent)
+		.navigationBarTitleDisplayMode(.inline)
+		.toolbar {
+			ToolbarItemGroup(placement: .bottomBar) {
+				Button(role: .destructive) {
+					do { try agent.revert(path); dismiss() } catch { self.error = error.localizedDescription }
+				} label: { Label(L("Revert"), systemImage: "arrow.uturn.backward") }
+				Spacer()
+				Button { agent.keep(path); dismiss() } label: { Label(L("Keep"), systemImage: "checkmark") }
+			}
+		}
+		.errorAlert($error)
 	}
 }

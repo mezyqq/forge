@@ -2,13 +2,14 @@ import Foundation
 import JavaScriptCore
 
 enum RunKind {
-	case python, lua, c, js, web
+	case python, lua, c, native, js, web
 
 	var title: String {
 		switch self {
 		case .python: return "Python"
 		case .lua: return "Lua"
 		case .c: return "C"
+		case .native: return "C++ / Objective-C"
 		case .js: return "JavaScript"
 		case .web: return L("Web")
 		}
@@ -19,6 +20,7 @@ enum RunKind {
 		case "py": return .python
 		case "lua": return .lua
 		case "c": return .c
+		case "cpp", "cc", "cxx", "m", "mm": return .native
 		case "js", "mjs", "cjs": return .js
 		case "html", "htm": return .web
 		default: return nil
@@ -26,8 +28,8 @@ enum RunKind {
 	}
 
 	/// Файлы, которые ищем для кнопки ▶ у проекта.
-	static let entryPoints = ["main.py", "main.js", "index.js", "app.js", "index.html", "main.lua", "main.c",
-	                          "src/main.py", "src/main.js", "src/index.js", "src/index.html", "src/main.lua", "src/main.c"]
+	static let entryPoints = ["main.py", "main.js", "index.js", "app.js", "index.html", "main.lua", "main.c", "main.cpp",
+	                          "src/main.py", "src/main.js", "src/index.js", "src/index.html", "src/main.lua", "src/main.c", "src/main.cpp"]
 }
 
 /// Консоль запуска. Одна на приложение: интерпретаторы пишут в stdout/stderr процесса и читают stdin,
@@ -53,6 +55,32 @@ final class Runner: ObservableObject {
 		CrashLog.crumb("сборка ipa: \(project.lastPathComponent)")
 		launch(title: L("Build ") + project.lastPathComponent, dir: project.path, interactive: false,
 		       body: { IpaBuilder.run(project, release: release) }) { _, code in completion?(code) }
+	}
+
+	/// Для агента: сборка .ipa, возвращает вывод и код выхода.
+	func captureBuild(_ project: URL) async -> (String, Int32) {
+		await withCheckedContinuation { (cont: CheckedContinuation<(String, Int32), Never>) in
+			DispatchQueue.main.async {
+				guard !self.running else {
+					cont.resume(returning: (L("Another run is in progress — wait for it or stop it."), -1))
+					return
+				}
+				CrashLog.crumb("ИИ: сборка ipa")
+				self.launch(title: L("Build ") + project.lastPathComponent, dir: project.path, interactive: false,
+				            body: { IpaBuilder.run(project, release: false) }) { cont.resume(returning: ($0, $1)) }
+			}
+		}
+	}
+
+	/// Быстрый запуск проекта без установки (JIT). completion — сессия с forge_preview (для превью UI) или nil.
+	func quickRun(_ project: URL, completion: @escaping (OpaquePointer?) -> Void) {
+		guard !running else { return }
+		CrashLog.crumb("быстрый запуск: \(project.lastPathComponent)")
+		final class Out { var preview: OpaquePointer? }
+		let out = Out()
+		launch(title: project.lastPathComponent, dir: project.path, interactive: true, body: {
+			Clang.runProject(project, preview: &out.preview)
+		}) { _, code in completion(code == 0 ? out.preview : nil) }
 	}
 
 	/// Для агента: запуск без ввода и с тайм-аутом, возвращает весь вывод.
@@ -86,6 +114,7 @@ final class Runner: ObservableObject {
 		forge_request_stop()
 		JSRunner.stop = true
 		IpaBuilder.cancel = true
+		Clang.stop()
 		closeInput()  // разблокирует input() / scanf / prompt()
 	}
 
@@ -108,7 +137,9 @@ final class Runner: ObservableObject {
 			switch kind {
 			case .python: return forge_run_python(path)
 			case .lua: return forge_run_lua(path)
-			case .c: return forge_run_c(path)
+			// есть компилятор и JIT — настоящий clang, иначе интерпретатор picoc
+			case .c: return Clang.canJIT ? Clang.runFile(path) : forge_run_c(path)
+			case .native: return Clang.runFile(path)
 			case .js: return JSRunner.run(path: path, dir: dir)
 			case .web: return 0
 			}
