@@ -2,6 +2,5 @@ build/
 releases/
 *.ipa
 *.map
-# LLVM: исходники и сборки качаются/строятся через compiler/build-llvm.sh
-compiler/*
-!compiler/build-llvm.sh
+# компилятор — отдельный репозиторий: git clone https://github.com/mezyqq/ios-compiler compiler
+compiler/
