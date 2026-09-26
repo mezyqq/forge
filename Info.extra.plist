@@ -1,0 +1,5 @@
+	<key>UIFileSharingEnabled</key><true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+	<key>NSAppTransportSecurity</key>
+	<dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+	<key>NSLocalNetworkUsageDescription</key><string>Для подключения к ИИ-модели на компьютере в твоей сети (Ollama, LM Studio).</string>

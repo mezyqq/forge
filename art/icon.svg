@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#2a1650"/>
+      <stop offset="0.55" stop-color="#140c2a"/>
+      <stop offset="1" stop-color="#07060d"/>
+    </linearGradient>
+    <radialGradient id="heat" cx="512" cy="600" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff7a1a" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#ff3d1f" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ff3d1f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="molten" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff6c2"/>
+      <stop offset="0.35" stop-color="#ffc233"/>
+      <stop offset="0.75" stop-color="#ff7417"/>
+      <stop offset="1" stop-color="#ff3b1a"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b5170"/>
+      <stop offset="0.5" stop-color="#262a3d"/>
+      <stop offset="1" stop-color="#12131d"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff5a1f" stop-opacity="0"/>
+      <stop offset="0.3" stop-color="#ffb347"/>
+      <stop offset="0.5" stop-color="#fff1b8"/>
+      <stop offset="0.7" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#ff5a1f" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#heat)"/>
+
+  <!-- наковальня -->
+  <path d="M380 600 L790 600 L790 668 Q700 676 655 705 L645 780 Q700 800 735 820 L735 862 L295 862 L295 820 Q330 800 385 780 L375 705 Q352 662 222 612 Q300 596 380 600 Z"
+        fill="url(#steel)" stroke="#6b7194" stroke-opacity="0.35" stroke-width="3"/>
+  <!-- раскалённая кромка -->
+  <rect x="250" y="594" width="560" height="14" rx="7" fill="url(#edge)" filter="url(#soft)"/>
+  <rect x="300" y="597" width="460" height="6" rx="3" fill="url(#edge)"/>
+
+  <!-- свечение символа -->
+  <g fill="none" stroke="#ff6a1a" stroke-width="84" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.9">
+    <polyline points="380,262 264,380 380,498"/>
+    <polyline points="644,262 760,380 644,498"/>
+    <line x1="566" y1="236" x2="458" y2="524"/>
+  </g>
+  <!-- раскалённый </> -->
+  <g fill="none" stroke="url(#molten)" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="380,262 264,380 380,498"/>
+    <polyline points="644,262 760,380 644,498"/>
+    <line x1="566" y1="236" x2="458" y2="524"/>
+  </g>
+  <!-- блик -->
+  <g fill="none" stroke="#fffbe6" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.75">
+    <polyline points="364,290 284,372"/>
+    <polyline points="660,290 740,372"/>
+    <line x1="556" y1="262" x2="530" y2="332"/>
+  </g>
+
+  <!-- искры -->
+  <g stroke-linecap="round">
+    <g stroke="#ffcf5a" stroke-width="8" filter="url(#soft)" opacity="0.9">
+      <line x1="470" y1="586" x2="392" y2="530"/>
+      <line x1="556" y1="586" x2="646" y2="522"/>
+      <line x1="512" y1="582" x2="512" y2="548"/>
+      <line x1="440" y1="590" x2="330" y2="566"/>
+      <line x1="590" y1="590" x2="712" y2="560"/>
+    </g>
+    <g stroke="#fff3c4" stroke-width="5">
+      <line x1="470" y1="586" x2="400" y2="536"/>
+      <line x1="556" y1="586" x2="638" y2="528"/>
+      <line x1="440" y1="590" x2="340" y2="568"/>
+      <line x1="590" y1="590" x2="702" y2="562"/>
+    </g>
+  </g>
+  <g fill="#ffd66b">
+    <circle cx="352" cy="512" r="7"/>
+    <circle cx="684" cy="500" r="8"/>
+    <circle cx="300" cy="548" r="5"/>
+    <circle cx="748" cy="540" r="6"/>
+    <circle cx="420" cy="470" r="4"/>
+    <circle cx="612" cy="462" r="5"/>
+    <circle cx="232" cy="500" r="4"/>
+    <circle cx="800" cy="486" r="4"/>
+    <circle cx="512" cy="530" r="5"/>
+  </g>
+</svg>
