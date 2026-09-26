@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+@preconcurrency import UserNotifications
 
 /// Обновление Forge из GitHub Releases (mezyqq/forge) прямо в приложении.
 ///
@@ -31,6 +32,7 @@ final class Updater: ObservableObject {
 		case downloading(Double)
 		case installing(Double)
 		case ready(Release)        // бандл заменён — осталось перезапустить через LiveContainer
+		case sideload(Release)     // установлен напрямую — ставим через SideStore или вручную
 		case downloaded(URL)       // не в LiveContainer — .ipa для «Поделиться»
 		case failed(String)
 	}
@@ -43,6 +45,7 @@ final class Updater: ObservableObject {
 
 	/// Остатки прошлого обновления (старый бандл, архив) — удалить при запуске.
 	nonisolated static func cleanup() {
+		clearReopen()
 		try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("forge-update"))
 	}
 
@@ -69,27 +72,19 @@ final class Updater: ObservableObject {
 	func install(_ rel: Release) async {
 		CrashLog.crumb("смена версии на \(rel.version)")
 		let fm = FileManager.default
+		let work = Updater.workDir
 		do {
 			// сначала — снимок данных этой версии: к ним можно будет вернуться
 			state = .saving
 			try await Snapshots.take(reason: "leave")
-			state = .downloading(0)
-			let work = Updater.workDir
-			try? fm.removeItem(at: work)
-			try fm.createDirectory(at: work, withIntermediateDirectories: true)
-			let ipa = work.appendingPathComponent("Forge-\(rel.version).ipa")
-			let (tmp, resp) = try await URLSession.shared.download(from: rel.ipa, delegate: Progress { p in
-				Task { @MainActor in self.state = .downloading(p) }
-			})
-			guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-				throw Unzip.Failure(message: L("Download failed (HTTP %@)", (resp as? HTTPURLResponse)?.statusCode ?? 0))
-			}
-			try fm.moveItem(at: tmp, to: ipa)
-
+			// установлен напрямую: ставит SideStore (или другой установщик), сами себя не заменим
 			guard LiveContainer.hosting else {
-				state = .downloaded(ipa)
+				state = .sideload(rel)
 				return
 			}
+			try? fm.removeItem(at: work)
+			try fm.createDirectory(at: work, withIntermediateDirectories: true)
+			let ipa = try await download(rel, into: work)
 			state = .installing(0)
 			let unpacked = work.appendingPathComponent("new")
 			try await Task.detached(priority: .userInitiated) {
@@ -102,13 +97,82 @@ final class Updater: ObservableObject {
 					Task { @MainActor in Updater.shared.state = .installing(p * 0.95) }
 				}
 			}.value
-			try? fm.removeItem(at: ipa)
+			try? fm.removeItem(at: ipa)  // распаковали — .ipa больше не нужен
 			let app = try LiveContainer.appInPayload(unpacked.appendingPathComponent("Payload"))
-			try LiveContainer.place(app, at: Bundle.main.bundleURL, trash: Updater.workDir.appendingPathComponent("old.app"))
+			let old = work.appendingPathComponent("old.app")
+			try LiveContainer.place(app, at: Bundle.main.bundleURL, trash: old)
+			// старая версия и пустая распаковка — сразу: работающий процесс держит свои файлы открытыми,
+			// удаление имени их не трогает
+			try? fm.removeItem(at: old)
+			try? fm.removeItem(at: unpacked)
 			state = .ready(rel)
 		} catch {
+			try? fm.removeItem(at: work)
 			state = .failed(error.localizedDescription)
 		}
+	}
+
+	/// Установка через SideStore: он скачает релиз с GitHub, подпишет и поставит поверх (данные сохраняются).
+	/// Forge при этом закроется — уведомление через минуту откроет новую версию одним нажатием.
+	func installWithSideStore(_ rel: Release) {
+		var c = URLComponents(string: "sidestore://install")!
+		c.queryItems = [URLQueryItem(name: "url", value: rel.ipa.absoluteString)]
+		UIApplication.shared.open(c.url!) { ok in
+			Task { @MainActor in
+				if ok { Updater.scheduleReopen(rel.version) }
+				else { Updater.shared.state = .failed(L("SideStore did not open. Is it installed? You can download the .ipa and install it another way.")) }
+			}
+		}
+	}
+
+	/// Скачать .ipa для «Поделиться» (другой установщик). Файл удаляется при следующем запуске Forge.
+	func downloadForShare(_ rel: Release) async {
+		let fm = FileManager.default, work = Updater.workDir
+		do {
+			try? fm.removeItem(at: work)
+			try fm.createDirectory(at: work, withIntermediateDirectories: true)
+			state = .downloaded(try await download(rel, into: work))
+		} catch {
+			try? fm.removeItem(at: work)
+			state = .failed(error.localizedDescription)
+		}
+	}
+
+	private func download(_ rel: Release, into work: URL) async throws -> URL {
+		state = .downloading(0)
+		let ipa = work.appendingPathComponent("Forge-\(rel.version).ipa")
+		let (tmp, resp) = try await URLSession.shared.download(from: rel.ipa, delegate: Progress { p in
+			Task { @MainActor in self.state = .downloading(p) }
+		})
+		guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+			try? FileManager.default.removeItem(at: tmp)
+			throw Unzip.Failure(message: L("Download failed (HTTP %@)", (resp as? HTTPURLResponse)?.statusCode ?? 0))
+		}
+		try FileManager.default.moveItem(at: tmp, to: ipa)
+		return ipa
+	}
+
+	nonisolated private static let reopenID = "forge-reopen"
+
+	/// Уведомление «открыть новую версию»: приложение, поставленное напрямую, не может перезапуститься само.
+	private static func scheduleReopen(_ version: String) {
+		let center = UNUserNotificationCenter.current()
+		center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+			guard ok else { return }
+			let n = UNMutableNotificationContent()
+			n.title = "Forge \(version)"
+			n.body = L("If the update has finished installing, tap to open Forge.")
+			n.sound = .default
+			center.add(UNNotificationRequest(identifier: reopenID, content: n,
+			                                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)))
+		}
+	}
+
+	/// При запуске: уведомление больше не нужно.
+	nonisolated static func clearReopen() {
+		let center = UNUserNotificationCenter.current()
+		center.removePendingNotificationRequests(withIdentifiers: [reopenID])
+		center.removeDeliveredNotifications(withIdentifiers: [reopenID])
 	}
 
 	/// Закрыть Forge и открыть LiveContainer: запуск оттуда пропатчит и подпишет новую версию.
@@ -217,9 +281,14 @@ struct UpdateSection: View {
 				Button { u.relaunch() } label: { Label(L("Restart into %@", r.version), systemImage: "power") }
 				Text(L("Forge will close and LiveContainer will open — tap Forge there. LiveContainer re-signs the new version on that launch. Projects, settings, keys and GitHub stay."))
 					.font(.footnote).foregroundStyle(.secondary)
+			case .sideload(let r):
+				Button { u.installWithSideStore(r) } label: { Label(L("Install %@ with SideStore", r.version), systemImage: "arrow.down.app.fill") }
+				Button { Task { await u.downloadForShare(r) } } label: { Label(L("Download the .ipa to install another way"), systemImage: "square.and.arrow.down") }
+				Text(L("SideStore replaces Forge and keeps its data; Forge closes during the install. A minute later a notification appears — tap it to open the new version."))
+					.font(.footnote).foregroundStyle(.secondary)
 			case .downloaded(let ipa):
 				Button { share = ShareItem(url: ipa) } label: { Label(L("Share %@", ipa.lastPathComponent), systemImage: "square.and.arrow.up") }
-				Text(L("Forge is not running inside LiveContainer, so it cannot replace itself. Install this .ipa over the current app with your installer — data is kept when the bundle ID is the same."))
+				Text(L("Forge is not running inside LiveContainer, so it cannot replace itself. Install this .ipa over the current app with your installer — data is kept when the bundle ID is the same. The file is deleted the next time Forge starts."))
 					.font(.footnote).foregroundStyle(.secondary)
 			}
 			NavigationLink { VersionsView() } label: { Label(L("Other versions (roll back)"), systemImage: "clock.arrow.circlepath") }
