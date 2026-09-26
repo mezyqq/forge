@@ -16,7 +16,7 @@ struct ChatView: View {
 				ScrollView {
 					LazyVStack(alignment: .leading, spacing: 10) {
 						if agent.items.isEmpty {
-							Text("Попроси ИИ что-нибудь сделать в проекте: «добавь экран настроек», «найди и почини баг в main.py», «разложи код по папкам»")
+							Text(L("Ask the AI to do something in the project: “add a settings screen”, “find and fix the bug in main.py”, “organize the code into folders”"))
 								.foregroundStyle(.secondary)
 						}
 						ForEach(agent.items) { Bubble(item: $0).id($0.id) }
@@ -32,11 +32,11 @@ struct ChatView: View {
 							}
 							HStack(spacing: 8) {
 								ProgressView()
-								Text(agent.status.isEmpty ? "работает…" : agent.status).font(.footnote).foregroundStyle(.secondary)
+								Text(agent.status.isEmpty ? L("working…") : agent.status).font(.footnote).foregroundStyle(.secondary)
 							}
 						}
 						if agent.canRetry {
-							Button { agent.retry() } label: { Label("Повторить", systemImage: "arrow.clockwise") }
+							Button { agent.retry() } label: { Label(L("Retry"), systemImage: "arrow.clockwise") }
 								.buttonStyle(.bordered)
 						}
 						Color.clear.frame(height: 1).id("end")
@@ -50,7 +50,7 @@ struct ChatView: View {
 			}
 			Divider()
 			HStack(alignment: .bottom, spacing: 8) {
-				TextField("Что сделать?", text: $input, axis: .vertical)
+				TextField(L("What should I do?"), text: $input, axis: .vertical)
 					.lineLimit(1...6)
 					.textFieldStyle(.roundedBorder)
 				if agent.busy {
@@ -71,7 +71,7 @@ struct ChatView: View {
 				HStack {
 					Image(systemName: "checklist")
 					let done = agent.todos.filter { $0.status == "completed" }.count
-					Text("План: \(done)/\(agent.todos.count)").font(.footnote.bold())
+					Text(L("Plan: %@/%@", done, agent.todos.count)).font(.footnote.bold())
 					Spacer()
 					Image(systemName: showTodos ? "chevron.up" : "chevron.down").font(.caption)
 				}
@@ -101,7 +101,7 @@ struct ChatView: View {
 	private var modelBar: some View {
 		Menu {
 			ForEach(ps.list) { p in
-				Menu(p.name + (p.needsKey && ps.key(p).isEmpty ? " (нет ключа)" : "")) {
+				Menu(L(p.name) + (p.needsKey && ps.key(p).isEmpty ? L(" (no key)") : "")) {
 					ForEach(p.models, id: \.self) { m in
 						Button {
 							ps.active = ModelRef(provider: p.id, model: m)
@@ -115,7 +115,7 @@ struct ChatView: View {
 			HStack(spacing: 6) {
 				Image(systemName: "cpu")
 				Text(ps.active.model).font(.footnote.monospaced()).lineLimit(1)
-				Text("· \(ps.activeProvider?.name ?? "?")").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+				Text("· \(L(ps.activeProvider?.name ?? "?"))").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
 				Image(systemName: "chevron.up.chevron.down").font(.caption2)
 			}
 			.padding(.horizontal)
@@ -164,7 +164,7 @@ struct Bubble: View {
 			}
 		}
 		.contextMenu {
-			Button { UIPasteboard.general.string = item.text } label: { Label("Копировать", systemImage: "doc.on.doc") }
+			Button { UIPasteboard.general.string = item.text } label: { Label(L("Copy"), systemImage: "doc.on.doc") }
 		}
 	}
 

@@ -71,10 +71,10 @@ final class Agent: ObservableObject {
 
 	private func start() {
 		let ps = Providers.shared
-		guard let p = ps.activeProvider else { items.append(.init(.error, "Выбери модель в настройках")); return }
+		guard let p = ps.activeProvider else { items.append(.init(.error, L("Choose a model in Settings"))); return }
 		let key = ps.key(p)
 		if p.needsKey && key.isEmpty {
-			items.append(.init(.error, "У «\(p.name)» нет ключа. Добавь его в настройках или выбери Pollinations — он без ключа."))
+			items.append(.init(.error, L("“%@” has no key. Add it in Settings or choose LLM7 or Pollinations — they need no key.", L(p.name))))
 			return
 		}
 		let model = ps.active.model
@@ -109,18 +109,18 @@ final class Agent: ObservableObject {
 				pruneIfNeeded(provider)
 				live = ""
 				liveReasoning = ""
-				status = "думает…"
+				status = L("thinking…")
 				let r = try await LLM.complete(provider: provider, key: key, model: model, system: system ?? "",
 				                               tools: ToolBox.definitions, messages: messages) { [weak self] ev in
 					DispatchQueue.main.async {
 						guard let self else { return }
 						switch ev {
-						case .text(let t): self.live += t; self.status = "пишет…"
+						case .text(let t): self.live += t; self.status = L("writing…")
 						case .reasoning(let t):
 							self.liveReasoning += t
 							if self.liveReasoning.count > 600 { self.liveReasoning = String(self.liveReasoning.suffix(400)) }
-							self.status = "размышляет…"
-						case .tool(let n): self.status = "вызывает \(n)…"
+							self.status = L("reasoning…")
+						case .tool(let n): self.status = L("calling %@…", n)
 						}
 					}
 				}
@@ -128,7 +128,7 @@ final class Agent: ObservableObject {
 					// откатываем весь ход, чтобы история осталась валидной и можно было переформулировать
 					if checkpoint < messages.count { messages.removeSubrange(checkpoint...) }
 					live = ""
-					items.append(.init(.error, "Модель отказалась выполнять этот запрос. Переформулируй."))
+					items.append(.init(.error, L("The model refused this request. Rephrase it.")))
 					return
 				}
 				messages.append(["role": "assistant", "content": r.content])
@@ -152,7 +152,7 @@ final class Agent: ObservableObject {
 						if truncated {
 							// обрезанный вызов (например, write с половиной файла) не выполняем
 							res = .init(output: "Your response was cut off by the output limit, so this tool call was not executed. Split the work into smaller steps.",
-							            isError: true, summary: "\(name): ответ обрезан")
+							            isError: true, summary: L("%@: response truncated", name))
 						} else {
 							// защита от зацикливания (opencode: doom loop) — одинаковые вызовы подряд
 							let call = Call(name: name, input: Agent.stableJSON(input))
@@ -161,12 +161,12 @@ final class Agent: ObservableObject {
 							let repeats = recent.reversed().prefix { $0 == call }.count
 							if repeats >= 6 {
 								abort = true
-								res = .init(output: "Stopped: the same call was repeated too many times.", isError: true, summary: "зациклился на \(name)")
+								res = .init(output: "Stopped: the same call was repeated too many times.", isError: true, summary: L("stuck in a loop on %@", name))
 							} else if repeats >= 3 {
 								res = .init(output: "You have called \(name) with exactly the same arguments \(repeats) times in a row and it does not help. Stop repeating it: change your approach, read the relevant file again, or explain to the user what is blocking you.",
-								            isError: true, summary: "\(name): повтор того же вызова")
+								            isError: true, summary: L("%@: the same call repeated", name))
 							} else {
-								status = "выполняет \(name)…"
+								status = L("running %@…", name)
 								CrashLog.crumb("ИИ: инструмент \(name)")
 								res = await toolbox.run(name, input)
 							}
@@ -180,21 +180,21 @@ final class Agent: ObservableObject {
 				save()
 				if !results.isEmpty { messages.append(["role": "user", "content": results]) }
 				if abort {
-					items.append(.init(.error, "Модель зациклилась на одном действии — остановил. Уточни задачу или смени модель."))
+					items.append(.init(.error, L("The model got stuck repeating one action — stopped. Clarify the task or switch models.")))
 					return
 				}
 				if results.isEmpty {
-					if truncated { items.append(.init(.error, "Ответ обрезан по длине. Напиши «продолжай».")) }
-					else if r.content.isEmpty { items.append(.init(.error, "Модель вернула пустой ответ.")) }
+					if truncated { items.append(.init(.error, L("The response was cut off by length. Say “continue”."))) }
+					else if r.content.isEmpty { items.append(.init(.error, L("The model returned an empty response."))) }
 					return
 				}
 				try Task.checkCancellation()
 			}
-			items.append(.init(.info, "Сделано 100 шагов подряд — пауза. Напиши «продолжай», чтобы идти дальше."))
+			items.append(.init(.info, L("100 steps in a row — pausing. Say “continue” to go on.")))
 		} catch is CancellationError {
-			items.append(.init(.info, "Остановлено"))
+			items.append(.init(.info, L("Stopped")))
 		} catch let e as URLError where e.code == .cancelled {
-			items.append(.init(.info, "Остановлено"))
+			items.append(.init(.info, L("Stopped")))
 		} catch {
 			items.append(.init(.error, error.localizedDescription))
 		}

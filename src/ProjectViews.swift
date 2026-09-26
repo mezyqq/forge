@@ -12,13 +12,30 @@ struct ProjectView: View {
 	@State private var showSearch = false
 	@State private var showGit = false
 	@State private var run: RunTarget?
+	@State private var building: BuildTarget?
 	@State private var error: String?
+
+	/// iOS-приложение (есть ipa.conf) — главная кнопка собирает .ipa, а не запускает скрипт.
+	private var isApp: Bool { FileManager.default.fileExists(atPath: project.url.appendingPathComponent("ipa.conf").path) }
+
+	private struct BuildTarget: Identifiable {
+		let release: Bool
+		let id = UUID()
+	}
+
+	private func buildApp(release: Bool) {
+		if IpaBuilder.available {
+			building = BuildTarget(release: release)
+		} else {
+			error = L("This Forge build has no compiler — build the project with ipab on a computer.")
+		}
+	}
 
 	var body: some View {
 		VStack(spacing: 0) {
 			Picker("", selection: $tab) {
-				Text("Файлы").tag(0)
-				Text("ИИ").tag(1)
+				Text(L("Files")).tag(0)
+				Text(L("AI")).tag(1)
 			}
 			.pickerStyle(.segmented)
 			.padding(.horizontal)
@@ -35,22 +52,34 @@ struct ProjectView: View {
 		.toolbar {
 			ToolbarItemGroup(placement: .navigationBarTrailing) {
 				Button {
-					if let e = store.entryPoint(in: project) {
+					if isApp {
+						buildApp(release: false)
+					} else if let e = store.entryPoint(in: project) {
 						run = RunTarget(url: project.url.appendingPathComponent(e), root: project.url)
 					} else {
-						error = "Не нашёл, что запускать (main.py, main.js, index.html, main.lua, main.c). Открой файл и нажми ▶ в редакторе. iOS-приложения собираются через ipab на компьютере."
+						error = L("Nothing to run found (main.py, main.js, index.html, main.lua, main.c). Open a file and tap ▶ in the editor.")
 					}
-				} label: { Image(systemName: "play.fill") }
+				} label: { Image(systemName: isApp ? "hammer.fill" : "play.fill") }
 				Button { showGit = true } label: { Image(systemName: "arrow.triangle.branch") }
 				Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
 				Menu {
-					Button { showConf = true } label: { Label("Настройки проекта", systemImage: "slider.horizontal.3") }
+					Button { showConf = true } label: { Label(L("Project settings"), systemImage: "slider.horizontal.3") }
+					if isApp {
+						Button { buildApp(release: true) } label: {
+							Label(L("Build release (version +1)"), systemImage: "shippingbox")
+						}
+						if let ipa = IpaBuilder.ipaURL(project.url) {
+							Button { share = ShareItem(url: ipa) } label: {
+								Label(L("Share %@", ipa.lastPathComponent), systemImage: "square.and.arrow.up.on.square")
+							}
+						}
+					}
 					Button {
 						do { share = ShareItem(url: try store.archive(project)) } catch { self.error = error.localizedDescription }
 					} label: {
-						Label("Поделиться .zip", systemImage: "square.and.arrow.up")
+						Label(L("Share .zip"), systemImage: "square.and.arrow.up")
 					}
-					Button(role: .destructive) { confirmReset = true } label: { Label("Новый чат", systemImage: "trash") }
+					Button(role: .destructive) { confirmReset = true } label: { Label(L("New chat"), systemImage: "trash") }
 				} label: { Image(systemName: "ellipsis.circle") }
 			}
 		}
@@ -59,8 +88,9 @@ struct ProjectView: View {
 		.sheet(isPresented: $showSearch) { SearchView(project: project) }
 		.sheet(isPresented: $showGit) { GitView(project: project) }
 		.fullScreenCover(item: $run) { RunSheet(target: $0) }
-		.confirmationDialog("Очистить историю чата?", isPresented: $confirmReset, titleVisibility: .visible) {
-			Button("Очистить", role: .destructive) { store.agent(for: project).reset() }
+		.fullScreenCover(item: $building) { BuildView(project: project.url, release: $0.release) }
+		.confirmationDialog(L("Clear the chat history?"), isPresented: $confirmReset, titleVisibility: .visible) {
+			Button(L("Clear"), role: .destructive) { store.agent(for: project).reset() }
 		}
 		.errorAlert($error)
 	}
@@ -83,20 +113,20 @@ struct FilesView: View {
 			OutlineGroup(nodes, children: \.children) { node in
 				row(node)
 					.contextMenu { menu(node) }
-					.swipeActions { Button(role: .destructive) { toDelete = node } label: { Label("Удалить", systemImage: "trash") } }
+					.swipeActions { Button(role: .destructive) { toDelete = node } label: { Label(L("Delete"), systemImage: "trash") } }
 			}
 			Section {
-				Button { newFile(in: "src") } label: { Label("Новый файл", systemImage: "doc.badge.plus") }
-				Button { newFolder(in: "") } label: { Label("Новая папка", systemImage: "folder.badge.plus") }
-				Button { importDir = "res"; showImport = true } label: { Label("Импорт из «Файлов» в res/", systemImage: "square.and.arrow.down") }
+				Button { newFile(in: "src") } label: { Label(L("New file"), systemImage: "doc.badge.plus") }
+				Button { newFolder(in: "") } label: { Label(L("New folder"), systemImage: "folder.badge.plus") }
+				Button { importDir = "res"; showImport = true } label: { Label(L("Import from Files into res/"), systemImage: "square.and.arrow.down") }
 			}
 		}
 		.promptAlert($prompt, error: $error)
 		.errorAlert($error)
-		.confirmationDialog("Удалить \(toDelete?.path ?? "")\(toDelete?.isDir == true ? " со всем содержимым" : "")?",
+		.confirmationDialog(L(toDelete?.isDir == true ? "Delete %@ with all its contents?" : "Delete %@?", toDelete?.path ?? ""),
 		                    isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
 		                    titleVisibility: .visible) {
-			Button("Удалить", role: .destructive) {
+			Button(L("Delete"), role: .destructive) {
 				if let n = toDelete { attempt { try store.remove(n.path, in: project) } }
 			}
 		}
@@ -122,31 +152,31 @@ struct FilesView: View {
 
 	@ViewBuilder private func menu(_ n: FileNode) -> some View {
 		let dir = n.isDir ? n.path : n.parent
-		Button { newFile(in: dir) } label: { Label("Новый файл здесь", systemImage: "doc.badge.plus") }
-		Button { newFolder(in: dir) } label: { Label("Новая папка здесь", systemImage: "folder.badge.plus") }
-		Button { importDir = dir; showImport = true } label: { Label("Импорт сюда", systemImage: "square.and.arrow.down") }
+		Button { newFile(in: dir) } label: { Label(L("New file here"), systemImage: "doc.badge.plus") }
+		Button { newFolder(in: dir) } label: { Label(L("New folder here"), systemImage: "folder.badge.plus") }
+		Button { importDir = dir; showImport = true } label: { Label(L("Import here"), systemImage: "square.and.arrow.down") }
 		Button {
-			prompt = Prompt(title: "Переименовать / переместить", text: n.path) { new in
+			prompt = Prompt(title: L("Rename / move"), text: n.path) { new in
 				if new != n.path { try store.move(n.path, to: new, in: project) }
 			}
-		} label: { Label("Переименовать", systemImage: "pencil") }
+		} label: { Label(L("Rename"), systemImage: "pencil") }
 		if !n.isDir {
-			Button { UIPasteboard.general.string = n.path } label: { Label("Копировать путь", systemImage: "doc.on.doc") }
+			Button { UIPasteboard.general.string = n.path } label: { Label(L("Copy path"), systemImage: "doc.on.doc") }
 		}
-		Button(role: .destructive) { toDelete = n } label: { Label("Удалить", systemImage: "trash") }
+		Button(role: .destructive) { toDelete = n } label: { Label(L("Delete"), systemImage: "trash") }
 	}
 
 	private func newFile(in dir: String) {
-		prompt = Prompt(title: "Новый файл", text: dir.isEmpty ? "" : dir + "/", placeholder: "src/Foo.m") { path in
+		prompt = Prompt(title: L("New file"), text: dir.isEmpty ? "" : dir + "/", placeholder: "src/Foo.m") { path in
 			if (try? store.resolve(path, in: project)).map({ FileManager.default.fileExists(atPath: $0.path) }) == true {
-				throw StoreError("\(path) уже существует")
+				throw StoreError(L("%@ already exists", path))
 			}
 			try store.write(path, "", in: project)
 		}
 	}
 
 	private func newFolder(in dir: String) {
-		prompt = Prompt(title: "Новая папка", text: dir.isEmpty ? "" : dir + "/", placeholder: "src/Views") { path in
+		prompt = Prompt(title: L("New folder"), text: dir.isEmpty ? "" : dir + "/", placeholder: "src/Views") { path in
 			try store.makeDir(path, in: project)
 		}
 	}
@@ -211,7 +241,7 @@ struct EditorScreen: View {
 							Button { if d.line > 0 { handle.go(toLine: d.line) } } label: {
 								HStack(alignment: .top, spacing: 8) {
 									Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
-									Text((d.line > 0 ? "Строка \(d.line): " : "") + d.message)
+									Text((d.line > 0 ? L("Line %@: ", d.line) : "") + d.message)
 										.font(.caption.monospaced())
 										.lineLimit(3)
 										.multilineTextAlignment(.leading)
@@ -240,19 +270,19 @@ struct EditorScreen: View {
 					}
 					Button { handle.find(replace: false) } label: { Image(systemName: "magnifyingglass") }
 					Menu {
-						Button { handle.find(replace: true) } label: { Label("Найти и заменить", systemImage: "arrow.left.arrow.right") }
+						Button { handle.find(replace: true) } label: { Label(L("Find and replace"), systemImage: "arrow.left.arrow.right") }
 						Button {
-							prompt = Prompt(title: "Перейти к строке", text: "", placeholder: "номер") { s in
+							prompt = Prompt(title: L("Go to line"), text: "", placeholder: L("number")) { s in
 								if let n = Int(s) { handle.go(toLine: n) }
 							}
-						} label: { Label("Перейти к строке", systemImage: "arrow.down.to.line") }
-						Button { fontSize = min(28, fontSize + 1) } label: { Label("Крупнее", systemImage: "textformat.size.larger") }
-						Button { fontSize = max(9, fontSize - 1) } label: { Label("Мельче", systemImage: "textformat.size.smaller") }
-						Toggle(isOn: $lineNumbers) { Label("Номера строк", systemImage: "list.number") }
+						} label: { Label(L("Go to line"), systemImage: "arrow.down.to.line") }
+						Button { fontSize = min(28, fontSize + 1) } label: { Label(L("Larger"), systemImage: "textformat.size.larger") }
+						Button { fontSize = max(9, fontSize - 1) } label: { Label(L("Smaller"), systemImage: "textformat.size.smaller") }
+						Toggle(isOn: $lineNumbers) { Label(L("Line numbers"), systemImage: "list.number") }
 						if SyntaxCheck.supports(path) {
-							Toggle(isOn: $syntaxCheck) { Label("Проверка синтаксиса", systemImage: "checkmark.shield") }
+							Toggle(isOn: $syntaxCheck) { Label(L("Syntax checking"), systemImage: "checkmark.shield") }
 						}
-						Button { UIPasteboard.general.string = text } label: { Label("Копировать всё", systemImage: "doc.on.doc") }
+						Button { UIPasteboard.general.string = text } label: { Label(L("Copy all"), systemImage: "doc.on.doc") }
 						Section(lang.name) {}
 					} label: { Image(systemName: "ellipsis.circle") }
 				}
@@ -328,7 +358,7 @@ struct BinaryPreview: View {
 			let size = (url.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int }) ?? 0
 			VStack(spacing: 8) {
 				Image(systemName: "doc.questionmark").font(.largeTitle)
-				Text("Не текстовый файл")
+				Text(L("Not a text file"))
 				Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)).foregroundStyle(.secondary)
 			}
 		}
@@ -359,17 +389,17 @@ struct ConfView: View {
 				}
 				Section {
 					NavigationLink { EditorScreen(project: project, path: "ipa.conf") } label: {
-						Label("Открыть ipa.conf как текст", systemImage: "doc.text")
+						Label(L("Open ipa.conf as text"), systemImage: "doc.text")
 					}
 				} footer: {
-					Text("Фреймворки через пробел, напр. «Foundation UIKit SwiftUI AVFoundation».")
+					Text(L("Frameworks separated by spaces, e.g. “Foundation UIKit SwiftUI AVFoundation”."))
 				}
 			}
-			.navigationTitle("Настройки проекта")
+			.navigationTitle(L("Project settings"))
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
-				ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
-				ToolbarItem(placement: .confirmationAction) { Button("Сохранить", action: save) }
+				ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } }
+				ToolbarItem(placement: .confirmationAction) { Button(L("Save"), action: save) }
 			}
 			.errorAlert($error)
 			.onAppear {
@@ -411,15 +441,15 @@ struct SearchView: View {
 				}
 			}
 			.overlay {
-				if hits.isEmpty && !query.isEmpty { Text("Ничего не найдено").foregroundStyle(.secondary) }
+				if hits.isEmpty && !query.isEmpty { Text(L("Nothing found")).foregroundStyle(.secondary) }
 			}
-			.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Текст в файлах проекта")
+			.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Text in project files"))
 			.textInputAutocapitalization(.never)
 			.autocorrectionDisabled()
 			.onChange(of: query) { q in hits = q.count < 2 ? [] : store.search(q, in: project) }
-			.navigationTitle("Поиск")
+			.navigationTitle(L("Search"))
 			.navigationBarTitleDisplayMode(.inline)
-			.toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+			.toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } } }
 		}
 	}
 }

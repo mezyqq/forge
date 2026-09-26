@@ -139,11 +139,11 @@ final class ToolBox {
 	func run(_ rawName: String, _ input: [String: Any]) async -> Result {
 		guard let name = ToolBox.canonical(rawName) else {
 			return Result(output: "Unknown tool \"\(rawName)\". Available tools: \(ToolBox.names.joined(separator: ", ")).",
-			              isError: true, summary: "неизвестный инструмент \(rawName)")
+			              isError: true, summary: L("unknown tool %@", rawName))
 		}
 		if let raw = input["_raw"] as? String {
 			return Result(output: "The arguments for \(name) were not valid JSON: \(raw.prefix(300)). Call the tool again with a proper JSON object.",
-			              isError: true, summary: "\(name): неверные аргументы")
+			              isError: true, summary: L("%@: invalid arguments", name))
 		}
 		do {
 			let r = try await execute(name, input)
@@ -223,18 +223,18 @@ final class ToolBox {
 					fm.fileExists(atPath: u.appendingPathComponent(item).path, isDirectory: &d)
 					return d.boolValue ? item + "/" : item
 				}
-				return ("<path>\(path.isEmpty ? "." : path)</path>\n<type>directory</type>\n" + lines.joined(separator: "\n"), "смотрит \(path.isEmpty ? "проект" : path)/")
+				return ("<path>\(path.isEmpty ? "." : path)</path>\n<type>directory</type>\n" + lines.joined(separator: "\n"), path.isEmpty ? L("viewing the project") : L("viewing %@/", path))
 			}
 			guard let data = fm.contents(atPath: u.path) else { throw StoreError("Cannot read \(path)") }
 			guard let text = String(data: data, encoding: .utf8) else {
-				return ("<path>\(path)</path>\n(binary file, \(data.count) bytes — cannot display)", "читает \(path) (бинарный)")
+				return ("<path>\(path)</path>\n(binary file, \(data.count) bytes — cannot display)", L("reading %@ (binary)", path))
 			}
 			markRead(path)
 			var all = text.components(separatedBy: "\n")
 			if all.last == "" { all.removeLast() }
 			let offset = max(1, int(input, "offset") ?? 1)
 			let limit = max(1, int(input, "limit") ?? 2000)
-			if all.isEmpty { return ("<path>\(path)</path>\n<type>file</type>\n(empty file)", "читает \(path)") }
+			if all.isEmpty { return ("<path>\(path)</path>\n<type>file</type>\n(empty file)", L("reading %@", path)) }
 			guard offset <= all.count else { throw StoreError("offset \(offset) is beyond the end of the file (\(all.count) lines)") }
 			let end = min(all.count, offset + limit - 1)
 			var out = "<path>\(path)</path>\n<type>file</type>\n<content>\n"
@@ -245,7 +245,7 @@ final class ToolBox {
 			out += "</content>\n"
 			out += end < all.count ? "\n(Showing lines \(offset)-\(end) of \(all.count). Use offset=\(end + 1) to continue.)"
 			                       : "\n(End of file - total \(all.count) lines)"
-			return (out, "читает \(path)" + (offset > 1 || end < all.count ? " [\(offset)–\(end)]" : ""))
+			return (out, L("reading %@", path) + (offset > 1 || end < all.count ? " [\(offset)–\(end)]" : ""))
 
 		case "edit":
 			let path = rel(try str(input, ["filePath", "path", "file_path"])!)
@@ -257,7 +257,7 @@ final class ToolBox {
 				guard old.isEmpty else { throw StoreError("File not found: \(path). Use write to create a new file.") }
 				try store.write(path, new, in: project)
 				markRead(path)
-				return ("Created \(path).", "создаёт \(path)")
+				return ("Created \(path).", L("creating %@", path))
 			}
 			try requireRead(path, u)
 			let content = try store.read(path, in: project)
@@ -266,7 +266,7 @@ final class ToolBox {
 			markRead(path)
 			let delta = updated.components(separatedBy: "\n").count - content.components(separatedBy: "\n").count
 			let diag = ToolBox.diagnostics(updated, path)
-			return ("Edit applied successfully." + diag.0, "правит \(path)" + (delta == 0 ? "" : " (\(delta > 0 ? "+" : "")\(delta) стр.)") + diag.1)
+			return ("Edit applied successfully." + diag.0, L("editing %@", path) + (delta == 0 ? "" : L(" (%@%@ lines)", delta > 0 ? "+" : "", delta)) + diag.1)
 
 		case "write":
 			let path = rel(try str(input, ["filePath", "path", "file_path"])!)
@@ -279,12 +279,12 @@ final class ToolBox {
 			markRead(path)
 			let n = content.components(separatedBy: "\n").count
 			let diag = ToolBox.diagnostics(content, path)
-			return ("Wrote \(path) (\(n) lines)." + diag.0, (existed ? "перезаписывает " : "создаёт ") + "\(path) (\(n) стр.)" + diag.1)
+			return ("Wrote \(path) (\(n) lines)." + diag.0, L(existed ? "overwriting %@ (%@ lines)" : "creating %@ (%@ lines)", path, n) + diag.1)
 
 		case "list":
 			let dir = rel(try str(input, ["path", "dir", "directory"], required: false) ?? "")
 			let tree = ToolBox.tree(store.entries(in: project), under: dir, limit: 500)
-			return (tree.isEmpty ? "(empty)" : tree, "смотрит дерево \(dir.isEmpty ? "проекта" : dir)")
+			return (tree.isEmpty ? "(empty)" : tree, dir.isEmpty ? L("viewing the project tree") : L("viewing the tree of %@", dir))
 
 		case "glob":
 			let pattern = try str(input, ["pattern", "glob"])!
@@ -302,7 +302,7 @@ final class ToolBox {
 			hits.sort { $0.1 > $1.1 }
 			let shown = hits.prefix(200).map(\.0)
 			return (shown.isEmpty ? "No files found" : shown.joined(separator: "\n") + (hits.count > 200 ? "\n(… \(hits.count - 200) more)" : ""),
-			        "ищет файлы \(pattern)")
+			        L("searching files %@", pattern))
 
 		case "grep":
 			let pattern = try str(input, ["pattern", "query", "regex"])!
@@ -330,19 +330,19 @@ final class ToolBox {
 				}
 			}
 			return (out.isEmpty ? "No matches found" : "Found \(count)\(count >= 200 ? "+" : "") matches\n" + out.joined(separator: "\n"),
-			        "ищет «\(pattern)»")
+			        L("searching “%@”", pattern))
 
 		case "move":
 			let from = rel(try str(input, ["from", "source", "oldPath"])!), to = rel(try str(input, ["to", "destination", "newPath"])!)
 			try store.move(from, to: to, in: project)
 			if let t = readAt.removeValue(forKey: from) { readAt[to] = t }
-			return ("Moved \(from) → \(to)", "переносит \(from) → \(to)")
+			return ("Moved \(from) → \(to)", L("moving %@ → %@", from, to))
 
 		case "delete":
 			let path = rel(try str(input, ["path", "filePath", "file_path"])!)
 			guard !path.isEmpty else { throw ArgError(message: "refusing to delete the whole project") }
 			try store.remove(path, in: project)
-			return ("Deleted \(path)", "удаляет \(path)")
+			return ("Deleted \(path)", L("deleting %@", path))
 
 		case "run":
 			let path = rel(try str(input, ["filePath", "path", "file_path"])!)
@@ -350,7 +350,7 @@ final class ToolBox {
 				throw StoreError("run supports .py .js .lua .c files (HTML is previewed by the user)")
 			}
 			let out = await Runner.shared.capture(try url(path))
-			return (out, "запускает \(path)")
+			return (out, L("running %@", path))
 
 		case "todowrite":
 			guard let list = input["todos"] as? [[String: Any]] else { throw ArgError(message: "todos must be an array") }
@@ -362,7 +362,7 @@ final class ToolBox {
 			let left = todos.filter { $0.status == "pending" || $0.status == "in_progress" }.count
 			let json = (try? JSONSerialization.data(withJSONObject: todos.map { ["content": $0.content, "status": $0.status, "id": $0.id] }))
 				.map { String(decoding: $0, as: UTF8.self) } ?? "[]"
-			return ("\(left) todos remaining\n\(json)", "план: осталось \(left) из \(todos.count)")
+			return ("\(left) todos remaining\n\(json)", L("plan: %@ of %@ left", left, todos.count))
 
 		case "webfetch":
 			let s = try str(input, ["url"])!
@@ -378,7 +378,7 @@ final class ToolBox {
 			let body = String(decoding: d.prefix(5_000_000), as: UTF8.self)
 			let isHTML = ((r as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "").contains("html") || body.contains("<html")
 			let text = isHTML && (input["format"] as? String) != "html" ? ToolBox.htmlToText(body) : body
-			return (text, "читает \(u.host ?? s)")
+			return (text, L("reading %@", u.host ?? s))
 
 		default:
 			throw StoreError("unknown tool \(name)")
@@ -391,7 +391,7 @@ final class ToolBox {
 	static func diagnostics(_ text: String, _ path: String) -> (String, String) {
 		guard SyntaxCheck.supports(path), let d = SyntaxCheck.check(text, path: path) else { return ("", "") }
 		return ("\n\n<diagnostics file=\"\(path)\">\nSyntax error\(d.line > 0 ? " at line \(d.line)" : ""): \(d.message)\n</diagnostics>\nFix this error before continuing.",
-		        " ⚠︎ синтаксис: строка \(d.line)")
+		        L(" ⚠︎ syntax: line %@", d.line))
 	}
 
 	/// Папки, которые почти никогда не нужны модели.

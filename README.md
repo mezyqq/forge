@@ -27,8 +27,8 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
 - **Building .ipa on the phone**: C, Objective-C, C++ with the built-in clang + lld (see below).
 - **AI agent** based on opencode's ideas: streaming, read/edit/write/glob/grep/list/run/todowrite/webfetch tools,
   forgiving replacement in edit, a task plan, loop protection, syntax diagnostics after edits.
-  Any provider: OpenAI-compatible and Anthropic. The default is the free Pollinations without a key;
-  it works best with the free big-pickle from OpenCode Zen (needs a key from opencode.ai/auth).
+  Any provider: OpenAI-compatible and Anthropic. Free and without a key out of the box: Pollinations (default)
+  and LLM7 (GLM-5.3-Flash, MiniMax-M2.7, Codestral).
 - **GitHub** over the API (no git): clone, commit and push, pull changes, branches, history with diffs,
   pull requests, issues, publishing a project to a new repository. Sign-in with a Personal Access Token.
 - **Crash log** (Settings → Debugging): a report with the version, stack and recent actions.

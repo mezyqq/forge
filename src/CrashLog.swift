@@ -91,7 +91,7 @@ struct CrashListView: View {
 	var body: some View {
 		List {
 			Section {
-				if reports.isEmpty { Text("Вылетов не было 🎉").foregroundStyle(.secondary) }
+				if reports.isEmpty { Text(L("No crashes 🎉")).foregroundStyle(.secondary) }
 				ForEach(reports, id: \.self) { r in
 					NavigationLink { CrashReportView(url: r) } label: {
 						Label(r.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "crash-", with: ""),
@@ -100,27 +100,27 @@ struct CrashListView: View {
 					}
 				}
 			} footer: {
-				Text("Открой отчёт и нажми «Поделиться» — отправь файл разработчику. В отчёте: версия Forge, модель устройства, стек вызовов и последние действия в приложении. Ключей и кода проектов там нет.")
+				Text(L("Open a report and tap Share to send the file to the developer. The report has the Forge version, device model, call stack and recent actions in the app. No keys or project code."))
 			}
 			if !reports.isEmpty {
 				Section {
-					Button("Удалить все отчёты", role: .destructive) {
+					Button(L("Delete all reports"), role: .destructive) {
 						CrashLog.deleteAll()
 						reports = []
 					}
 				}
 			}
 			Section {
-				Button("Проверить журнал (вызвать вылет)", role: .destructive) { confirmTest = true }
+				Button(L("Test the log (trigger a crash)"), role: .destructive) { confirmTest = true }
 			} footer: {
-				Text("Forge закроется. После повторного запуска здесь должен появиться отчёт.")
+				Text(L("Forge will close. After relaunching, a report should appear here."))
 			}
 		}
-		.navigationTitle("Журнал вылетов")
+		.navigationTitle(L("Crash log"))
 		.navigationBarTitleDisplayMode(.inline)
 		.onAppear { reports = CrashLog.reports() }
-		.confirmationDialog("Закрыть Forge тестовым вылетом?", isPresented: $confirmTest, titleVisibility: .visible) {
-			Button("Вылететь", role: .destructive) {
+		.confirmationDialog(L("Close Forge with a test crash?"), isPresented: $confirmTest, titleVisibility: .visible) {
+			Button(L("Crash"), role: .destructive) {
 				CrashLog.crumb("тестовый вылет из настроек")
 				let empty: [Int] = []
 				_ = empty[Int.random(in: 1...2)]  // выход за границы массива → SIGTRAP
@@ -141,7 +141,7 @@ struct CrashReportView: View {
 				.textSelection(.enabled)
 				.padding()
 		}
-		.navigationTitle("Отчёт")
+		.navigationTitle(L("Report"))
 		.navigationBarTitleDisplayMode(.inline)
 		.toolbar {
 			ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -150,6 +150,6 @@ struct CrashReportView: View {
 			}
 		}
 		.sheet(item: $share) { ShareSheet(url: $0.url) }
-		.onAppear { text = (try? String(contentsOf: url, encoding: .utf8)) ?? "Не удалось прочитать отчёт" }
+		.onAppear { text = (try? String(contentsOf: url, encoding: .utf8)) ?? L("Could not read the report") }
 	}
 }

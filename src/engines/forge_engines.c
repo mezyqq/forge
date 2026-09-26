@@ -43,7 +43,7 @@ static char *read_file(const char *path) {
 int forge_run_python(const char *path) {
 	if (!py_inited) py_ensure(); else py_resetvm();
 	char *src = read_file(path);
-	if (!src) { fprintf(stderr, "не удалось прочитать %s\n", path); return 1; }
+	if (!src) { fprintf(stderr, "could not read %s\n", path); return 1; }
 	forge_stop_flag = 0;
 	py_watchdog_end();
 	py_running = 1;

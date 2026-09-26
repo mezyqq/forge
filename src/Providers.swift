@@ -26,7 +26,7 @@ enum Keychain {
 enum APIKind: String, Codable, CaseIterable, Identifiable, Sendable {
 	case openai, anthropic
 	var id: String { rawValue }
-	var title: String { self == .openai ? "OpenAI-совместимый" : "Anthropic" }
+	var title: String { self == .openai ? L("OpenAI-compatible") : "Anthropic" }
 }
 
 struct Provider: Codable, Identifiable, Hashable, Sendable {
@@ -53,41 +53,50 @@ final class Providers: ObservableObject {
 	@Published var active: ModelRef { didSet { save() } }
 
 	nonisolated static let presets: [Provider] = [
-		Provider(id: "pollinations", name: "Pollinations (бесплатно, без ключа)", kind: .openai,
+		Provider(id: "pollinations", name: "Pollinations (free, no key)", kind: .openai,
 		         baseURL: "https://text.pollinations.ai/openai", models: ["openai-fast"], needsKey: false,
-		         note: "Работает сразу, без регистрации. Модель слабая (GPT-OSS 20B), зато бесплатная."),
-		Provider(id: "opencode-zen", name: "OpenCode Zen (бесплатные модели)", kind: .openai,
+		         note: "Works right away, no sign-up. The model is weak (GPT-OSS 20B) but free."),
+		Provider(id: "llm7", name: "LLM7 (free, no key)", kind: .openai,
+		         baseURL: "https://api.llm7.io/v1", models: ["GLM-5.3-Flash", "minimax-m2.7", "codestral-latest"], needsKey: false,
+		         note: "Works without a key; the listed models support the agent's tools. Anonymous limit: one request at a time — after Stop it may refuse for a few minutes. Other models need a key from llm7.io."),
+		Provider(id: "opencode-zen", name: "OpenCode Zen", kind: .openai,
 		         baseURL: "https://opencode.ai/zen/v1",
 		         models: ["big-pickle", "deepseek-v4-flash-free", "mimo-v2.6-flash-free", "nemotron-3-ultra-free",
 		                  "space-bunny-free", "ling-3.0-flash-fin-free"],
 		         needsKey: true,
-		         note: "Big Pickle и другие *-free модели бесплатны, но нужен Zen API-ключ: opencode.ai/auth"),
-		Provider(id: "openrouter", name: "OpenRouter (бесплатные :free)", kind: .openai,
+		         note: "Needs a Zen API key: opencode.ai/auth. Zen's free tier (*-free models, Big Pickle) only works inside OpenCode itself."),
+		Provider(id: "openrouter", name: "OpenRouter (free :free models)", kind: .openai,
 		         baseURL: "https://openrouter.ai/api/v1",
 		         models: ["qwen/qwen3.8-27b:free", "nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free",
 		                  "cohere/north-mini-code:free", "poolside/laguna-s-2.1:free"],
 		         needsKey: true,
-		         note: "Модели с :free бесплатны (с лимитами). Ключ без карты: openrouter.ai/keys"),
+		         note: "Models with :free are free (rate-limited). Key without a card: openrouter.ai/keys"),
 		Provider(id: "anthropic", name: "Anthropic (Claude)", kind: .anthropic,
 		         baseURL: "https://api.anthropic.com/v1",
 		         models: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"], needsKey: true,
-		         note: "Платно. Ключ: console.anthropic.com"),
+		         note: "Paid. Key: console.anthropic.com"),
 		Provider(id: "openai", name: "OpenAI", kind: .openai, baseURL: "https://api.openai.com/v1",
 		         models: ["gpt-5.5", "gpt-5.4-mini"], needsKey: true,
-		         note: "Платно. Ключ: platform.openai.com. Список моделей можно загрузить кнопкой."),
+		         note: "Paid. Key: platform.openai.com. The model list can be fetched with the button."),
 		Provider(id: "gemini", name: "Google Gemini", kind: .openai,
 		         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
 		         models: ["gemini-3.5-flash", "gemini-3.1-pro"], needsKey: true,
-		         note: "Есть бесплатный лимит. Ключ: aistudio.google.com/apikey"),
-		Provider(id: "local", name: "Ollama / LM Studio (своя сеть)", kind: .openai,
+		         note: "Has a free tier. Key: aistudio.google.com/apikey"),
+		Provider(id: "local", name: "Ollama / LM Studio (local network)", kind: .openai,
 		         baseURL: "http://192.168.1.10:11434/v1", models: ["qwen3-coder"], needsKey: false,
-		         note: "Укажи IP компьютера. Ollama: порт 11434, LM Studio: 1234. Запусти сервер с доступом из сети."),
+		         note: "Enter the computer's IP. Ollama: port 11434, LM Studio: 1234. Start the server with network access."),
 	]
 
 	private init() {
 		let d = UserDefaults.standard
 		var saved = (d.data(forKey: "providers.v1")).flatMap { try? JSONDecoder().decode([Provider].self, from: $0) } ?? []
 		for p in Providers.presets where !saved.contains(where: { $0.id == p.id }) { saved.append(p) }
+		// имя и описание пресетов — всегда из определения (английские, на экран через L()); так уходят старые русские
+		for i in saved.indices {
+			guard let pre = Providers.presets.first(where: { $0.id == saved[i].id }) else { continue }
+			saved[i].name = pre.name
+			saved[i].note = pre.note
+		}
 		list = saved
 		active = (d.data(forKey: "active.v1")).flatMap { try? JSONDecoder().decode(ModelRef.self, from: $0) }
 			?? ModelRef(provider: "pollinations", model: "openai-fast")
@@ -127,7 +136,7 @@ final class Providers: ObservableObject {
 	}
 
 	func addCustom() -> Provider {
-		let p = Provider(id: UUID().uuidString, name: "Мой провайдер", kind: .openai,
+		let p = Provider(id: UUID().uuidString, name: L("My provider"), kind: .openai,
 		                 baseURL: "https://", models: [], needsKey: true)
 		list.append(p)
 		return p
@@ -143,7 +152,7 @@ final class Providers: ObservableObject {
 		let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
 		guard code == 200 else { throw StoreError("HTTP \(code): \(LLM.errorText(j, d))") }
 		let ids = (j["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
-		guard !ids.isEmpty else { throw StoreError("Сервер не вернул список моделей") }
+		guard !ids.isEmpty else { throw StoreError(L("The server did not return a model list")) }
 		return ids.sorted()
 	}
 }
@@ -162,7 +171,7 @@ enum LLM {
 		var b = base.trimmingCharacters(in: .whitespacesAndNewlines)
 		while b.hasSuffix("/") { b.removeLast() }
 		guard let u = URL(string: b + "/" + path), u.scheme != nil, u.host != nil else {
-			throw StoreError("Неверный адрес провайдера: \(base)")
+			throw StoreError(L("Invalid provider URL: %@", base))
 		}
 		return u
 	}
@@ -234,7 +243,7 @@ enum LLM {
 					continue
 				}
 				let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
-				if code == 401 || code == 403 { throw StoreError("Ключ не подошёл (\(code)): \(errorText(j, d))") }
+				if code == 401 || code == 403 { throw StoreError(L("The key was rejected (%@): %@", code, errorText(j, d))) }
 				throw StoreError("HTTP \(code): \(errorText(j, d))")
 			}
 			for try await line in bytes.lines {
@@ -317,7 +326,7 @@ enum LLM {
 				if let s = (e["delta"] as? [String: Any])?["stop_reason"] as? String { stop = s }
 			case "error":
 				let m = (e["error"] as? [String: Any])?["message"] as? String ?? payload
-				throw StoreError("Ошибка API: \(m)")
+				throw StoreError(L("API error: %@", m))
 			default: break
 			}
 		}
@@ -364,7 +373,7 @@ enum LLM {
 		try await stream(try url(p.baseURL, "chat/completions"), p, key,
 		                 ["model": model, "messages": msgs, "tools": fns, "stream": true]) { payload in
 			guard let j = json(payload) else { return }
-			if j["error"] != nil { throw StoreError("Ошибка API: \(errorText(j, Data(payload.utf8)))") }
+			if j["error"] != nil { throw StoreError(L("API error: %@", errorText(j, Data(payload.utf8)))) }
 			guard let ch = (j["choices"] as? [[String: Any]])?.first else { return }
 			if let f = ch["finish_reason"] as? String { finish = f }
 			let d = ch["delta"] as? [String: Any] ?? ch["message"] as? [String: Any] ?? [:]

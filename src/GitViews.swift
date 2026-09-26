@@ -11,7 +11,7 @@ struct GitHubAccountView: View {
 	var body: some View {
 		Form {
 			Section {
-				SecureField("ghp_… или github_pat_…", text: $token)
+				SecureField(L("ghp_… or github_pat_…"), text: $token)
 					.textInputAutocapitalization(.never)
 					.autocorrectionDisabled()
 				Button {
@@ -22,28 +22,28 @@ struct GitHubAccountView: View {
 						checking = false
 					}
 				} label: {
-					HStack { Text("Сохранить и проверить"); if checking { Spacer(); ProgressView() } }
+					HStack { Text(L("Save and verify")); if checking { Spacer(); ProgressView() } }
 				}
 				.disabled(token.isEmpty || checking)
 			} header: {
 				Text("Personal Access Token")
 			} footer: {
-				Text("Fine-grained токен: выбери репозитории и дай права Contents, Pull requests, Issues — Read and write (для новых репозиториев — Administration). Или classic-токен со scope «repo».")
+				Text(L("Fine-grained token: pick the repositories and grant Contents, Pull requests, Issues — Read and write (Administration for new repositories). Or a classic token with the “repo” scope."))
 			}
 			if !login.isEmpty {
-				Section { Label("Вход выполнен: \(login)", systemImage: "checkmark.seal.fill").foregroundStyle(.green) }
+				Section { Label(L("Signed in: %@", login), systemImage: "checkmark.seal.fill").foregroundStyle(.green) }
 			}
 			Section {
 				Link(destination: URL(string: "https://github.com/settings/personal-access-tokens/new")!) {
-					Label("Создать fine-grained токен", systemImage: "safari")
+					Label(L("Create a fine-grained token"), systemImage: "safari")
 				}
 				Link(destination: URL(string: "https://github.com/settings/tokens/new?scopes=repo&description=Forge")!) {
-					Label("Создать classic-токен (repo)", systemImage: "safari")
+					Label(L("Create a classic token (repo)"), systemImage: "safari")
 				}
 			}
 			if !GH.token.isEmpty {
 				Section {
-					Button("Выйти", role: .destructive) {
+					Button(L("Sign out"), role: .destructive) {
 						Keychain.set(GH.tokenKey, "")
 						token = ""
 						login = ""
@@ -78,30 +78,30 @@ struct CloneView: View {
 		NavigationStack {
 			Form {
 				Section {
-					TextField("owner/repo или ссылка на GitHub", text: $spec)
+					TextField(L("owner/repo or a GitHub link"), text: $spec)
 						.textInputAutocapitalization(.never)
 						.autocorrectionDisabled()
 						.keyboardType(.URL)
-					TextField("ветка (по умолчанию — основная)", text: $branch)
+					TextField(L("branch (default — the main one)"), text: $branch)
 						.textInputAutocapitalization(.never)
 						.autocorrectionDisabled()
-					Button { clone(spec) } label: { Label("Клонировать", systemImage: "arrow.down.circle.fill") }
+					Button { clone(spec) } label: { Label(L("Clone"), systemImage: "arrow.down.circle.fill") }
 						.disabled(spec.isEmpty || busy != nil)
 				} footer: {
-					Text("Публичные репозитории клонируются и без токена.")
+					Text(L("Public repositories can be cloned without a token."))
 				}
 				if let busy {
 					Section { HStack { ProgressView(); Text(busy).font(.footnote) } }
 				}
 				if GH.token.isEmpty {
 					Section {
-						Text("Добавь токен GitHub в настройках — появятся твои репозитории, приватные репо, коммиты и пуш.")
+						Text(L("Add a GitHub token in Settings to get your repositories, private repos, commits and push."))
 							.font(.footnote)
 							.foregroundStyle(.secondary)
 					}
 				} else {
 					Section {
-						TextField("Поиск", text: $filter)
+						TextField(L("Search"), text: $filter)
 						if loadingRepos { ProgressView() }
 						ForEach(filtered) { r in
 							Button { clone(r.fullName) } label: {
@@ -116,13 +116,13 @@ struct CloneView: View {
 							.disabled(busy != nil)
 						}
 					} header: {
-						Text("Мои репозитории")
+						Text(L("My repositories"))
 					}
 				}
 			}
-			.navigationTitle("Клонировать")
+			.navigationTitle(L("Clone"))
 			.navigationBarTitleDisplayMode(.inline)
-			.toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+			.toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } } }
 			.errorAlert($error)
 			.task {
 				guard !GH.token.isEmpty, repos.isEmpty else { return }
@@ -135,7 +135,7 @@ struct CloneView: View {
 	}
 
 	private func clone(_ s: String) {
-		busy = "Начинаю…"
+		busy = L("Starting…")
 		let root = store.root, br = branch.trimmingCharacters(in: .whitespaces)
 		Task {
 			do {
@@ -180,7 +180,7 @@ struct GitView: View {
 			}
 			.navigationTitle("GitHub")
 			.navigationBarTitleDisplayMode(.inline)
-			.toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+			.toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } } }
 			.errorAlert($error)
 			.onAppear { repoName = project.name; refresh() }
 		}
@@ -194,7 +194,7 @@ struct GitView: View {
 					Image(systemName: "arrow.triangle.branch")
 					VStack(alignment: .leading) {
 						Text(st.fullName).bold().foregroundStyle(.primary)
-						Text("ветка \(st.branch) · \(String(st.head.prefix(7)))").font(.caption.monospaced()).foregroundStyle(.secondary)
+						Text(L("branch %@ · %@", st.branch, String(st.head.prefix(7)))).font(.caption.monospaced()).foregroundStyle(.secondary)
 					}
 					Spacer()
 					Image(systemName: "safari").foregroundStyle(.secondary)
@@ -203,7 +203,7 @@ struct GitView: View {
 		}
 		Section {
 			if changes.isEmpty {
-				Text("Изменений нет").foregroundStyle(.secondary)
+				Text(L("No changes")).foregroundStyle(.secondary)
 			}
 			ForEach(changes) { c in
 				HStack(spacing: 10) {
@@ -219,70 +219,70 @@ struct GitView: View {
 					}
 				}
 				.swipeActions {
-					Button("Отменить", role: .destructive) { perform("Отменяю…") { _ in try await Git.discard(project.url, c); return nil } }
+					Button(L("Discard"), role: .destructive) { perform(L("Discarding…")) { _ in try await Git.discard(project.url, c); return nil } }
 				}
 			}
 			if !changes.isEmpty {
-				TextField("Сообщение коммита", text: $message, axis: .vertical)
+				TextField(L("Commit message"), text: $message, axis: .vertical)
 					.lineLimit(1...4)
 				Button { commit() } label: {
-					Label("Коммит и пуш (\(selected.count))", systemImage: "arrow.up.circle.fill")
+					Label(L("Commit and push (%@)", selected.count), systemImage: "arrow.up.circle.fill")
 				}
 				.disabled(selected.isEmpty || message.trimmingCharacters(in: .whitespaces).isEmpty || busy != nil || GH.token.isEmpty)
 			}
 		} header: {
-			Text("Изменения")
+			Text(L("Changes"))
 		} footer: {
-			if GH.token.isEmpty { Text("Для коммитов нужен токен GitHub в настройках.") }
-			else if !changes.isEmpty { Text("Смахни влево, чтобы отменить изменение файла.") }
+			if GH.token.isEmpty { Text(L("Commits need a GitHub token in Settings.")) }
+			else if !changes.isEmpty { Text(L("Swipe left to discard a file's changes.")) }
 		}
 		Section {
 			Button {
-				perform("Получаю…") { p in
+				perform(L("Pulling…")) { p in
 					let r = try await Git.sync(project.url, progress: p)
-					if r.upToDate { return "Уже актуально" }
-					var s = "Обновлено файлов: \(r.updated), удалено: \(r.deleted)."
+					if r.upToDate { return L("Already up to date") }
+					var s = L("Files updated: %@, deleted: %@.", r.updated, r.deleted)
 					if !r.conflicts.isEmpty {
-						s += "\nКонфликты (оставлена твоя версия, версия с GitHub лежит рядом как .remote):\n" + r.conflicts.joined(separator: "\n")
+						s += L("\nConflicts (your version is kept, the GitHub version is next to it as .remote):\n") + r.conflicts.joined(separator: "\n")
 					}
 					return s
 				}
-			} label: { Label("Получить изменения", systemImage: "arrow.down.circle") }
+			} label: { Label(L("Pull changes"), systemImage: "arrow.down.circle") }
 			.disabled(busy != nil)
-			NavigationLink { BranchesView(project: project, onChange: refresh) } label: { Label("Ветки", systemImage: "arrow.triangle.branch") }
-			NavigationLink { HistoryView(project: project) } label: { Label("История коммитов", systemImage: "clock.arrow.circlepath") }
+			NavigationLink { BranchesView(project: project, onChange: refresh) } label: { Label(L("Branches"), systemImage: "arrow.triangle.branch") }
+			NavigationLink { HistoryView(project: project) } label: { Label(L("Commit history"), systemImage: "clock.arrow.circlepath") }
 			NavigationLink { ItemsView(project: project, pulls: true) } label: { Label("Pull requests", systemImage: "arrow.triangle.pull") }
 			NavigationLink { ItemsView(project: project, pulls: false) } label: { Label("Issues", systemImage: "exclamationmark.bubble") }
 		}
 		Section {
-			Button("Отвязать от GitHub", role: .destructive) {
+			Button(L("Unlink from GitHub"), role: .destructive) {
 				try? FileManager.default.removeItem(at: GitState.url(project.url))
 				refresh()
 			}
 		} footer: {
-			Text("Файлы останутся, удалится только связь с репозиторием.")
+			Text(L("Files stay; only the link to the repository is removed."))
 		}
 	}
 
 	@ViewBuilder private var unlinked: some View {
 		Section {
-			TextField("Имя репозитория", text: $repoName)
+			TextField(L("Repository name"), text: $repoName)
 				.textInputAutocapitalization(.never)
 				.autocorrectionDisabled()
-			Toggle("Приватный", isOn: $isPrivate)
+			Toggle(L("Private"), isOn: $isPrivate)
 			Button {
 				let name = repoName.trimmingCharacters(in: .whitespaces), priv = isPrivate
-				perform("Публикую…") { p in
+				perform(L("Publishing…")) { p in
 					try await Git.publish(project.url, name: name, isPrivate: priv, progress: p)
-					return "Готово: проект на GitHub"
+					return L("Done: the project is on GitHub")
 				}
-			} label: { Label("Создать репозиторий и запушить", systemImage: "icloud.and.arrow.up") }
+			} label: { Label(L("Create repository and push"), systemImage: "icloud.and.arrow.up") }
 			.disabled(repoName.isEmpty || busy != nil || GH.token.isEmpty)
 		} header: {
-			Text("Опубликовать на GitHub")
+			Text(L("Publish to GitHub"))
 		} footer: {
-			Text(GH.token.isEmpty ? "Сначала добавь токен GitHub в настройках."
-			                      : "Проект ещё не связан с репозиторием. Чтобы работать с существующим репозиторием — склонируй его с главного экрана.")
+			Text(GH.token.isEmpty ? L("Add a GitHub token in Settings first.")
+			                      : L("The project is not linked to a repository yet. To work with an existing repository, clone it from the main screen."))
 		}
 	}
 
@@ -311,9 +311,9 @@ struct GitView: View {
 
 	private func commit() {
 		let msg = message.trimmingCharacters(in: .whitespacesAndNewlines), paths = selected
-		perform("Коммичу…") { p in
+		perform(L("Committing…")) { p in
 			try await Git.commit(project.url, message: msg, paths: paths, progress: p)
-			return "Отправлено в GitHub ✓"
+			return L("Pushed to GitHub ✓")
 		}
 		message = ""
 	}
@@ -372,11 +372,11 @@ enum Diff {
 		var skipped = 0
 		for (k, l) in lines.enumerated() {
 			if keep[k] {
-				if skipped > 0 { out.append(DiffRow(id: out.count, kind: "…", text: "⋯ \(skipped) строк без изменений")); skipped = 0 }
+				if skipped > 0 { out.append(DiffRow(id: out.count, kind: "…", text: L("⋯ %@ unchanged lines", skipped))); skipped = 0 }
 				out.append(DiffRow(id: out.count, kind: l.0, text: l.1))
 			} else { skipped += 1 }
 		}
-		if skipped > 0 && !out.isEmpty { out.append(DiffRow(id: out.count, kind: "…", text: "⋯ \(skipped) строк без изменений")) }
+		if skipped > 0 && !out.isEmpty { out.append(DiffRow(id: out.count, kind: "…", text: L("⋯ %@ unchanged lines", skipped))) }
 		return out
 	}
 
@@ -418,7 +418,7 @@ struct DiffView: View {
 	var body: some View {
 		ScrollView {
 			if loading { ProgressView().padding() }
-			else if rows.isEmpty { Text("Текстовых отличий нет").foregroundStyle(.secondary).padding() }
+			else if rows.isEmpty { Text(L("No text differences")).foregroundStyle(.secondary).padding() }
 			DiffLines(rows: rows)
 		}
 		.navigationTitle((change.path as NSString).lastPathComponent)
@@ -426,9 +426,9 @@ struct DiffView: View {
 		.errorAlert($error)
 		.task {
 			do {
-				let base = change.kind == .added ? "" : (try await Git.baseText(project.url, change.path) ?? "(бинарный файл)")
+				let base = change.kind == .added ? "" : (try await Git.baseText(project.url, change.path) ?? L("(binary file)"))
 				let local = change.kind == .deleted ? ""
-					: ((try? String(contentsOf: project.url.appendingPathComponent(change.path), encoding: .utf8)) ?? "(бинарный файл)")
+					: ((try? String(contentsOf: project.url.appendingPathComponent(change.path), encoding: .utf8)) ?? L("(binary file)"))
 				rows = Diff.rows(base, local)
 			} catch {
 				self.error = error.localizedDescription
@@ -456,7 +456,7 @@ struct BranchesView: View {
 			ForEach(names, id: \.self) { n in
 				Button {
 					guard n != current else { return }
-					run("Переключаю на \(n)…") { p in try await Git.switchBranch(project.url, to: n, progress: p) }
+					run(L("Switching to %@…", n)) { p in try await Git.switchBranch(project.url, to: n, progress: p) }
 				} label: {
 					HStack {
 						Text(n).foregroundStyle(.primary)
@@ -467,12 +467,12 @@ struct BranchesView: View {
 				.disabled(busy != nil)
 			}
 		}
-		.navigationTitle("Ветки")
+		.navigationTitle(L("Branches"))
 		.toolbar {
 			Button {
-				prompt = Prompt(title: "Новая ветка от \(current)", text: "", placeholder: "feature/имя") { name in
+				prompt = Prompt(title: L("New branch from %@", current), text: "", placeholder: L("feature/name")) { name in
 					guard !name.isEmpty else { return }
-					run("Создаю \(name)…") { _ in try await Git.createBranch(project.url, name: name) }
+					run(L("Creating %@…", name)) { _ in try await Git.createBranch(project.url, name: name) }
 				}
 			} label: { Image(systemName: "plus") }
 		}
@@ -516,7 +516,7 @@ struct HistoryView: View {
 			}
 		}
 		.overlay { if loading { ProgressView() } }
-		.navigationTitle("История")
+		.navigationTitle(L("History"))
 		.errorAlert($error)
 		.task {
 			do { commits = try await Git.history(project.url) } catch { self.error = error.localizedDescription }
@@ -584,7 +584,7 @@ struct ItemsView: View {
 		}
 		.overlay {
 			if loading { ProgressView() }
-			else if items.isEmpty { Text(pulls ? "Открытых pull request'ов нет" : "Открытых issues нет").foregroundStyle(.secondary) }
+			else if items.isEmpty { Text(pulls ? L("No open pull requests") : L("No open issues")).foregroundStyle(.secondary) }
 		}
 		.navigationTitle(pulls ? "Pull requests" : "Issues")
 		.toolbar { Button { showNew = true } label: { Image(systemName: "plus") } }
@@ -614,24 +614,24 @@ struct NewItemView: View {
 	var body: some View {
 		NavigationStack {
 			Form {
-				TextField("Заголовок", text: $title)
-				TextField("Описание", text: $text, axis: .vertical).lineLimit(4...10)
+				TextField(L("Title"), text: $title)
+				TextField(L("Description"), text: $text, axis: .vertical).lineLimit(4...10)
 				if pulls {
 					Section {
-						TextField("в ветку", text: $base)
+						TextField(L("into branch"), text: $base)
 							.textInputAutocapitalization(.never)
 							.autocorrectionDisabled()
 					} footer: {
-						Text("Из текущей ветки «\(GitState.load(project.url)?.branch ?? "")». Сначала закоммить и запушь изменения.")
+						Text(L("From the current branch “%@”. Commit and push your changes first.", GitState.load(project.url)?.branch ?? ""))
 					}
 				}
 			}
-			.navigationTitle(pulls ? "Новый pull request" : "Новый issue")
+			.navigationTitle(pulls ? L("New pull request") : L("New issue"))
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
-				ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+				ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } }
 				ToolbarItem(placement: .confirmationAction) {
-					if busy { ProgressView() } else { Button("Создать", action: create).disabled(title.isEmpty) }
+					if busy { ProgressView() } else { Button(L("Create"), action: create).disabled(title.isEmpty) }
 				}
 			}
 			.errorAlert($error)

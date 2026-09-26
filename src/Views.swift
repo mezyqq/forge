@@ -24,12 +24,12 @@ extension View {
 				guard let p = prompt.wrappedValue else { return }
 				do { try p.action(p.text.trimmingCharacters(in: .whitespaces)) } catch { errorText.wrappedValue = error.localizedDescription }
 			}
-			Button("Отмена", role: .cancel) {}
+			Button(L("Cancel"), role: .cancel) {}
 		}
 	}
 
 	func errorAlert(_ error: Binding<String?>) -> some View {
-		alert("Ошибка", isPresented: Binding(get: { error.wrappedValue != nil }, set: { if !$0 { error.wrappedValue = nil } })) {
+		alert(L("Error"), isPresented: Binding(get: { error.wrappedValue != nil }, set: { if !$0 { error.wrappedValue = nil } })) {
 			Button("OK", role: .cancel) {}
 		} message: {
 			Text(error.wrappedValue ?? "")
@@ -70,20 +70,20 @@ struct ProjectsView: View {
 				ForEach(store.projects) { p in
 					NavigationLink(value: p) { Label(p.name, systemImage: "folder") }
 						.contextMenu {
-							Button { prompt = Prompt(title: "Переименовать", text: p.name) { try store.rename(p, to: $0) } } label: {
-								Label("Переименовать", systemImage: "pencil")
+							Button { prompt = Prompt(title: L("Rename"), text: p.name) { try store.rename(p, to: $0) } } label: {
+								Label(L("Rename"), systemImage: "pencil")
 							}
 							Button { do { try store.duplicate(p) } catch { self.error = error.localizedDescription } } label: {
-								Label("Дублировать", systemImage: "plus.square.on.square")
+								Label(L("Duplicate"), systemImage: "plus.square.on.square")
 							}
-							Button(role: .destructive) { toDelete = p } label: { Label("Удалить", systemImage: "trash") }
+							Button(role: .destructive) { toDelete = p } label: { Label(L("Delete"), systemImage: "trash") }
 						}
 				}
 				.onDelete { idx in toDelete = idx.first.map { store.projects[$0] } }
 			}
 			.overlay {
 				if store.projects.isEmpty {
-					Text("Проектов пока нет.\n+ — новый проект, ⤓ — клонировать с GitHub")
+					Text(L("No projects yet.\n+ — new project, ⤓ — clone from GitHub"))
 						.multilineTextAlignment(.center)
 						.foregroundStyle(.secondary)
 				}
@@ -102,21 +102,21 @@ struct ProjectsView: View {
 			.sheet(isPresented: $showNew) { NewProjectView() }
 			.sheet(isPresented: $showClone) { CloneView() }
 			.sheet(isPresented: $showSettings) { SettingsView() }
-			.confirmationDialog("Удалить проект «\(toDelete?.name ?? "")» со всеми файлами?",
+			.confirmationDialog(L("Delete project “%@” with all its files?", toDelete?.name ?? ""),
 			                    isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
 			                    titleVisibility: .visible) {
-				Button("Удалить", role: .destructive) { if let p = toDelete { store.delete(p) } }
+				Button(L("Delete"), role: .destructive) { if let p = toDelete { store.delete(p) } }
 			}
 			.promptAlert($prompt, error: $error)
 			.errorAlert($error)
 			.navigationDestination(isPresented: $showCrash) {
 				if let r = openReport { CrashReportView(url: r) }
 			}
-			.alert("Forge вылетел в прошлый раз", isPresented: Binding(get: { crashReport != nil && !showCrash }, set: { if !$0 { crashReport = nil; CrashLog.clearPending() } })) {
-				Button("Открыть отчёт") { openReport = crashReport; showCrash = true }
-				Button("Позже", role: .cancel) {}
+			.alert(L("Forge crashed last time"), isPresented: Binding(get: { crashReport != nil && !showCrash }, set: { if !$0 { crashReport = nil; CrashLog.clearPending() } })) {
+				Button(L("Open report")) { openReport = crashReport; showCrash = true }
+				Button(L("Later"), role: .cancel) {}
 			} message: {
-				Text("Отчёт сохранён в Настройки → Журнал вылетов. Его можно отправить разработчику.")
+				Text(L("The report is saved in Settings → Crash log. You can send it to the developer."))
 			}
 			.refreshable { store.reload() }
 			.onAppear {
@@ -137,26 +137,26 @@ struct NewProjectView: View {
 	var body: some View {
 		NavigationStack {
 			Form {
-				TextField("Имя (латиницей, без пробелов)", text: $name)
+				TextField(L("Name (Latin letters, no spaces)"), text: $name)
 					.textInputAutocapitalization(.never)
 					.autocorrectionDisabled()
-				Picker("Шаблон", selection: $template) {
-					Section("Запуск прямо на телефоне") {
+				Picker(L("Template"), selection: $template) {
+					Section(L("Runs right on the phone")) {
 						ForEach(Template.scripts) { Text($0.title).tag($0) }
 					}
-					Section("iOS-приложение (сборка ipab)") {
+					Section(L("iOS app (.ipa build)")) {
 						ForEach(Template.apps) { Text($0.title).tag($0) }
 					}
 				}
 				.pickerStyle(.inline)
 				if let error { Text(error).foregroundStyle(.red) }
 			}
-			.navigationTitle("Новый проект")
+			.navigationTitle(L("New project"))
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
-				ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+				ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { dismiss() } }
 				ToolbarItem(placement: .confirmationAction) {
-					Button("Создать") {
+					Button(L("Create")) {
 						do { _ = try store.create(name: name, template: template); dismiss() }
 						catch { self.error = error.localizedDescription }
 					}
@@ -176,81 +176,87 @@ struct SettingsView: View {
 	@AppStorage("lineNumbers") private var lineNumbers = true
 	@AppStorage("theme") private var themeID = "xcode"
 	@AppStorage("syntaxCheck") private var syntaxCheck = true
+	@AppStorage(L10n.key) private var language = "en"
 	@State private var newProvider: Provider?
 	@State private var showNewProvider = false
 
 	var body: some View {
 		NavigationStack {
 			Form {
+				Section(L("Language")) {
+					Picker(L("Language"), selection: $language) {
+						ForEach(L10n.languages, id: \.id) { Text($0.title).tag($0.id) }
+					}
+				}
 				Section {
 					HStack {
-						Text("Сейчас")
+						Text(L("Current"))
 						Spacer()
-						Text("\(ps.activeProvider?.name ?? "—")\n\(ps.active.model)")
+						Text("\(L(ps.activeProvider?.name ?? "—"))\n\(ps.active.model)")
 							.multilineTextAlignment(.trailing)
 							.font(.footnote)
 							.foregroundStyle(.secondary)
 					}
 				} header: {
-					Text("Модель ИИ")
+					Text(L("AI model"))
 				} footer: {
-					Text("Модель выбирается внутри провайдера или прямо в чате.")
+					Text(L("Pick the model inside a provider or right in the chat."))
 				}
 				Section {
 					ForEach(ps.list) { p in
 						NavigationLink { ProviderView(provider: p) } label: { ProviderRow(provider: p) }
 					}
-					Button { newProvider = ps.addCustom(); showNewProvider = true } label: { Label("Добавить провайдера", systemImage: "plus") }
+					Button { newProvider = ps.addCustom(); showNewProvider = true } label: { Label(L("Add provider"), systemImage: "plus") }
 				} header: {
-					Text("Провайдеры")
+					Text(L("Providers"))
 				} footer: {
-					Text("Подходит любой OpenAI-совместимый API (Groq, DeepSeek, Mistral, Together, свой сервер…) или Anthropic-совместимый.")
+					Text(L("Any OpenAI-compatible API works (Groq, DeepSeek, Mistral, Together, your own server…) or an Anthropic-compatible one."))
 				}
 				Section {
 					NavigationLink { GitHubAccountView() } label: {
 						HStack {
 							Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
 							Spacer()
-							Text(GH.token.isEmpty ? "не подключён" : (UserDefaults.standard.string(forKey: "github-login") ?? "подключён"))
+							Text(GH.token.isEmpty ? L("not connected") : (UserDefaults.standard.string(forKey: "github-login") ?? L("connected")))
 								.font(.footnote).foregroundStyle(.secondary)
 						}
 					}
 				} header: {
-					Text("Аккаунты")
+					Text(L("Accounts"))
 				}
 				Section {
 					NavigationLink { CrashListView() } label: {
 						HStack {
-							Label("Журнал вылетов", systemImage: "ladybug")
+							Label(L("Crash log"), systemImage: "ladybug")
 							Spacer()
 							Text("\(CrashLog.reports().count)").font(.footnote).foregroundStyle(.secondary)
 						}
 					}
 				} header: {
-					Text("Отладка")
+					Text(L("Debugging"))
 				} footer: {
 					Text("Forge \(CrashLog.version)")
 				}
-				Section("Редактор") {
+				Section(L("Editor")) {
 					NavigationLink { ThemePickerView() } label: {
 						HStack {
-							Label("Тема", systemImage: "paintpalette")
+							Label(L("Theme"), systemImage: "paintpalette")
 							Spacer()
-							Text(Theme.find(themeID).name).font(.footnote).foregroundStyle(.secondary)
+							Text(L(Theme.find(themeID).name)).font(.footnote).foregroundStyle(.secondary)
 						}
 					}
-					Toggle("Проверка синтаксиса", isOn: $syntaxCheck)
-					Stepper("Шрифт: \(Int(fontSize))", value: $fontSize, in: 9...28)
-					Toggle("Номера строк", isOn: $lineNumbers)
+					Toggle(L("Syntax checking"), isOn: $syntaxCheck)
+					Stepper(L("Font: %@", Int(fontSize)), value: $fontSize, in: 9...28)
+					Toggle(L("Line numbers"), isOn: $lineNumbers)
 				}
 			}
-			.navigationTitle("Настройки")
+			.navigationTitle(L("Settings"))
 			.navigationBarTitleDisplayMode(.inline)
 			.navigationDestination(isPresented: $showNewProvider) {
 				if let p = newProvider { ProviderView(provider: p) }
 			}
 			.toolbar {
-				ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } }
+				ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } }
 			}
 		}
 	}
@@ -263,13 +269,13 @@ struct ProviderRow: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 2) {
 			HStack {
-				Text(provider.name)
+				Text(L(provider.name))
 				if ps.active.provider == provider.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
 			}
 			if provider.needsKey && ps.key(provider).isEmpty {
-				Text("нет ключа").font(.caption).foregroundStyle(.orange)
+				Text(L("no key")).font(.caption).foregroundStyle(.orange)
 			} else {
-				Text("\(provider.models.count) моделей").font(.caption).foregroundStyle(.secondary)
+				Text(L("%@ models", provider.models.count)).font(.caption).foregroundStyle(.secondary)
 			}
 		}
 	}
@@ -292,20 +298,20 @@ struct ProviderView: View {
 	var body: some View {
 		Form {
 			if !p.note.isEmpty {
-				Section { Text(p.note).font(.footnote) }
+				Section { Text(L(p.note)).font(.footnote) }
 			}
-			Section("Подключение") {
-				TextField("Название", text: $p.name)
-				Picker("Тип API", selection: $p.kind) {
+			Section(L("Connection")) {
+				TextField(L("Name"), text: $p.name)
+				Picker(L("API type"), selection: $p.kind) {
 					ForEach(APIKind.allCases) { Text($0.title).tag($0) }
 				}
-				TextField("Адрес, напр. https://api.groq.com/openai/v1", text: $p.baseURL)
+				TextField(L("URL, e.g. https://api.groq.com/openai/v1"), text: $p.baseURL)
 					.textInputAutocapitalization(.never)
 					.autocorrectionDisabled()
 					.keyboardType(.URL)
 					.font(.footnote.monospaced())
-				Toggle("Нужен ключ", isOn: $p.needsKey)
-				SecureField("API-ключ", text: $key)
+				Toggle(L("Requires a key"), isOn: $p.needsKey)
+				SecureField(L("API key"), text: $key)
 					.textInputAutocapitalization(.never)
 					.autocorrectionDisabled()
 			}
@@ -326,11 +332,11 @@ struct ProviderView: View {
 				}
 				.onDelete { p.models.remove(atOffsets: $0) }
 				HStack {
-					TextField("ID модели", text: $newModel)
+					TextField(L("Model ID"), text: $newModel)
 						.textInputAutocapitalization(.never)
 						.autocorrectionDisabled()
 						.font(.footnote.monospaced())
-					Button("Добавить") {
+					Button(L("Add")) {
 						let m = newModel.trimmingCharacters(in: .whitespaces)
 						if !m.isEmpty && !p.models.contains(m) { p.models.append(m) }
 						newModel = ""
@@ -346,26 +352,26 @@ struct ProviderView: View {
 					}
 				} label: {
 					HStack {
-						Label("Загрузить список с сервера", systemImage: "arrow.down.circle")
+						Label(L("Fetch the list from the server"), systemImage: "arrow.down.circle")
 						if loading { Spacer(); ProgressView() }
 					}
 				}
 				.disabled(loading)
 			} header: {
-				Text("Модели — нажми, чтобы выбрать")
+				Text(L("Models — tap to select"))
 			}
 			Section {
 				if p.isPreset {
-					Button("Сбросить к стандартным настройкам") {
+					Button(L("Reset to defaults")) {
 						ps.resetPreset(p)
 						if let orig = Providers.presets.first(where: { $0.id == p.id }) { p = orig }
 					}
 				} else {
-					Button("Удалить провайдера", role: .destructive) { ps.remove(p); dismiss() }
+					Button(L("Delete provider"), role: .destructive) { ps.remove(p); dismiss() }
 				}
 			}
 		}
-		.navigationTitle(p.name)
+		.navigationTitle(L(p.name))
 		.navigationBarTitleDisplayMode(.inline)
 		.errorAlert($error)
 		.onDisappear(perform: commit)
@@ -389,7 +395,7 @@ struct ThemePickerView: View {
 				HStack(spacing: 12) {
 					ThemePreview(theme: t)
 					VStack(alignment: .leading, spacing: 4) {
-						Text(t.name).foregroundStyle(.primary)
+						Text(L(t.name)).foregroundStyle(.primary)
 						HStack(spacing: 4) {
 							ForEach(Array(t.swatches.enumerated()), id: \.offset) { _, c in
 								Circle().fill(c).frame(width: 12, height: 12)
@@ -401,7 +407,7 @@ struct ThemePickerView: View {
 				}
 			}
 		}
-		.navigationTitle("Тема")
+		.navigationTitle(L("Theme"))
 		.navigationBarTitleDisplayMode(.inline)
 	}
 }

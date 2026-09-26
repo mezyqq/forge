@@ -11,21 +11,10 @@ struct RunView: View {
 	var body: some View {
 		NavigationStack {
 			VStack(spacing: 0) {
-				ScrollViewReader { proxy in
-					ScrollView {
-						Text(runner.output.isEmpty ? " " : runner.output)
-							.font(.system(.footnote, design: .monospaced))
-							.textSelection(.enabled)
-							.frame(maxWidth: .infinity, alignment: .leading)
-							.padding(12)
-						Color.clear.frame(height: 1).id("end")
-					}
-					.onChange(of: runner.output) { _ in proxy.scrollTo("end", anchor: .bottom) }
-				}
-				.background(Color(.secondarySystemBackground))
+				ConsoleText(output: runner.output)
 				Divider()
 				HStack(spacing: 8) {
-					TextField(runner.running ? "ввод для программы" : "программа не запущена", text: $input)
+					TextField(runner.running ? L("program input") : L("program is not running"), text: $input)
 						.textInputAutocapitalization(.never)
 						.autocorrectionDisabled()
 						.textFieldStyle(.roundedBorder)
@@ -39,7 +28,7 @@ struct RunView: View {
 			.navigationTitle(runner.title)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
-				ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } }
+				ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
 					Button { UIPasteboard.general.string = runner.output } label: { Image(systemName: "doc.on.doc") }
 					if runner.running {
@@ -57,6 +46,77 @@ struct RunView: View {
 	private func send() {
 		runner.send(input)
 		input = ""
+	}
+}
+
+/// Вывод консоли с автопрокруткой вниз.
+struct ConsoleText: View {
+	let output: String
+	var body: some View {
+		ScrollViewReader { proxy in
+			ScrollView {
+				Text(output.isEmpty ? " " : output)
+					.font(.system(.footnote, design: .monospaced))
+					.textSelection(.enabled)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(12)
+				Color.clear.frame(height: 1).id("end")
+			}
+			.onChange(of: output) { _ in proxy.scrollTo("end", anchor: .bottom) }
+		}
+		.background(Color(.secondarySystemBackground))
+	}
+}
+
+// MARK: сборка .ipa
+
+/// Консоль сборки iOS-приложения на телефоне; по готовности — «Поделиться .ipa» (оттуда — в LiveContainer).
+struct BuildView: View {
+	let project: URL
+	let release: Bool
+	@ObservedObject private var runner = Runner.shared
+	@Environment(\.dismiss) private var dismiss
+	@State private var ipa: URL?
+	@State private var share: ShareItem?
+
+	var body: some View {
+		NavigationStack {
+			VStack(spacing: 0) {
+				ConsoleText(output: runner.output)
+				if let ipa, !runner.running {
+					Divider()
+					Button { share = ShareItem(url: ipa) } label: {
+						Label(L("Share %@", ipa.lastPathComponent), systemImage: "square.and.arrow.up")
+							.frame(maxWidth: .infinity)
+					}
+					.buttonStyle(.borderedProminent)
+					.padding(8)
+				}
+			}
+			.navigationTitle(release ? L("Release") : L("Build"))
+			.navigationBarTitleDisplayMode(.inline)
+			.toolbar {
+				ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
+				ToolbarItemGroup(placement: .navigationBarTrailing) {
+					Button { UIPasteboard.general.string = runner.output } label: { Image(systemName: "doc.on.doc") }
+					if runner.running {
+						Button { runner.stop() } label: { Image(systemName: "stop.fill").foregroundStyle(.red) }
+					} else {
+						Button(action: start) { Image(systemName: "hammer.fill") }
+					}
+				}
+			}
+		}
+		.sheet(item: $share) { ShareSheet(url: $0.url) }
+		.onAppear(perform: start)
+		.onDisappear { if runner.running { runner.stop() } }
+	}
+
+	private func start() {
+		ipa = nil
+		runner.build(project, release: release) { code in
+			if code == 0 { ipa = IpaBuilder.ipaURL(project) }
+		}
 	}
 }
 
@@ -138,7 +198,7 @@ struct WebRunView: View {
 			.navigationTitle(url.lastPathComponent)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
-				ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } }
+				ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
 					Button { showConsole.toggle() } label: { Image(systemName: "terminal") }
 					Button { console.lines = []; reload += 1 } label: { Image(systemName: "arrow.clockwise") }

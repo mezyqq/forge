@@ -10,7 +10,7 @@ enum RunKind {
 		case .lua: return "Lua"
 		case .c: return "C"
 		case .js: return "JavaScript"
-		case .web: return "Веб"
+		case .web: return L("Web")
 		}
 	}
 
@@ -47,19 +47,27 @@ final class Runner: ObservableObject {
 
 	func run(_ url: URL) { start(url, interactive: true, completion: nil) }
 
+	/// Сборка iOS-приложения проекта (IpaBuilder) в этой же консоли. completion — код выхода, на главном потоке.
+	func build(_ project: URL, release: Bool, completion: ((Int32) -> Void)? = nil) {
+		guard !running else { return }
+		CrashLog.crumb("сборка ipa: \(project.lastPathComponent)")
+		launch(title: L("Build ") + project.lastPathComponent, dir: project.path, interactive: false,
+		       body: { IpaBuilder.run(project, release: release) }) { _, code in completion?(code) }
+	}
+
 	/// Для агента: запуск без ввода и с тайм-аутом, возвращает весь вывод.
 	func capture(_ url: URL, timeout: Double = 15) async -> String {
 		await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
 			DispatchQueue.main.async {
 				guard !self.running else {
-					cont.resume(returning: "Сейчас идёт другой запуск — дождись его или останови.")
+					cont.resume(returning: L("Another run is in progress — wait for it or stop it."))
 					return
 				}
 				self.start(url, interactive: false) { cont.resume(returning: $0) }
 				let gen = self.generation
 				DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
 					if self.running && self.generation == gen {
-						self.append("\n[остановлено: дольше \(Int(timeout)) с]")
+						self.append(L("\n[stopped: longer than %@ s]", Int(timeout)))
 						self.stop()
 					}
 				}
@@ -77,6 +85,7 @@ final class Runner: ObservableObject {
 	func stop() {
 		forge_request_stop()
 		JSRunner.stop = true
+		IpaBuilder.cancel = true
 		closeInput()  // разблокирует input() / scanf / prompt()
 	}
 
@@ -94,13 +103,28 @@ final class Runner: ObservableObject {
 	private func start(_ url: URL, interactive: Bool, completion: ((String) -> Void)?) {
 		guard !running, let kind = RunKind.detect(url.path), kind != .web else { return }
 		CrashLog.crumb("запуск скрипта: \(url.lastPathComponent)")
+		let path = url.path, dir = url.deletingLastPathComponent().path
+		launch(title: url.lastPathComponent, dir: dir, interactive: interactive, body: {
+			switch kind {
+			case .python: return forge_run_python(path)
+			case .lua: return forge_run_lua(path)
+			case .c: return forge_run_c(path)
+			case .js: return JSRunner.run(path: path, dir: dir)
+			case .web: return 0
+			}
+		}) { out, _ in completion?(out) }
+	}
+
+	/// `body` на отдельном потоке, fd 0/1/2 на это время подменены на консоль.
+	private func launch(title: String, dir: String, interactive: Bool, body: @escaping () -> Int32,
+	                    completion: ((String, Int32) -> Void)?) {
 		var o: [Int32] = [0, 0], i: [Int32] = [0, 0]
 		guard pipe(&o) == 0 else { return }
 		guard pipe(&i) == 0 else { close(o[0]); close(o[1]); return }
 		running = true
 		generation += 1
 		output = ""
-		title = url.lastPathComponent
+		self.title = title
 		let (outR, outW, inR) = (o[0], o[1], i[0])
 		if interactive { inWrite = i[1] } else { close(i[1]) }
 
@@ -133,7 +157,6 @@ final class Runner: ObservableObject {
 		}
 
 		group.enter()
-		let path = url.path, dir = url.deletingLastPathComponent().path
 		let worker = Thread {
 			fflush(stdout); fflush(stderr)
 			let s0 = dup(0), s1 = dup(1), s2 = dup(2)
@@ -141,28 +164,21 @@ final class Runner: ObservableObject {
 			fpurge(stdin); clearerr(stdin)
 			setvbuf(stdout, nil, _IONBF, 0)
 			FileManager.default.changeCurrentDirectoryPath(dir)
-			let code: Int32
-			switch kind {
-			case .python: code = forge_run_python(path)
-			case .lua: code = forge_run_lua(path)
-			case .c: code = forge_run_c(path)
-			case .js: code = JSRunner.run(path: path, dir: dir)
-			case .web: code = 0
-			}
+			let code = body()
 			fflush(stdout); fflush(stderr)
 			dup2(s0, 0); dup2(s1, 1); dup2(s2, 2)
 			close(s0); close(s1); close(s2); close(outW); close(inR)
 			result.code = code
 			group.leave()
 		}
-		worker.stackSize = 16 << 20  // рекурсия в интерпретаторах
+		worker.stackSize = 16 << 20  // рекурсия в интерпретаторах и в clang
 		worker.start()
 
 		group.notify(queue: .main) {
 			self.running = false
 			self.closeInput()
-			self.append("\n[\(result.code == 0 ? "готово" : "код выхода \(result.code)")]\n")
-			completion?(self.output)
+			self.append("\n[\(result.code == 0 ? L("done") : L("exit code %@", result.code))]\n")
+			completion?(self.output, result.code)
 		}
 	}
 }
@@ -175,13 +191,13 @@ enum JSRunner {
 	static func run(path: String, dir: String) -> Int32 {
 		stop = false
 		guard let ctx = JSContext(), let src = try? String(contentsOfFile: path, encoding: .utf8) else {
-			fputs("не удалось прочитать \(path)\n", stderr)
+			fputs(L("could not read %@\n", path), stderr)
 			return 1
 		}
 		var failed = false
 		ctx.exceptionHandler = { _, e in
 			failed = true
-			let msg = e?.toString() ?? "ошибка"
+			let msg = e?.toString() ?? L("error")
 			let stack = e?.objectForKeyedSubscript("stack")?.toString() ?? ""
 			fputs(msg + (stack.isEmpty || stack == "undefined" ? "" : "\n" + stack) + "\n", stderr)
 		}

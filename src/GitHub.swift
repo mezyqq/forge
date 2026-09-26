@@ -82,7 +82,7 @@ enum GH {
 	@discardableResult
 	static func call(_ method: String, _ path: String, _ body: Any? = nil) async throws -> Any {
 		guard let url = URL(string: path.hasPrefix("https://") ? path : "https://api.github.com" + path) else {
-			throw StoreError("Неверный адрес: \(path)")
+			throw StoreError(L("Invalid address: %@", path))
 		}
 		var req = URLRequest(url: url)
 		req.httpMethod = method
@@ -102,11 +102,11 @@ enum GH {
 			var msg = (j as? [String: Any])?["message"] as? String ?? String(decoding: d.prefix(300), as: UTF8.self)
 			if let errs = (j as? [String: Any])?["errors"] as? [[String: Any]], let m = errs.first?["message"] as? String { msg += ": " + m }
 			switch code {
-			case 401: msg = "токен не подошёл или истёк (\(msg))"
-			case 403 where msg.lowercased().contains("rate limit"): msg = "лимит запросов исчерпан — добавь токен в настройках"
-			case 403: msg = "нет доступа (\(msg)). Проверь права токена: Contents и Pull requests — Read and write"
-			case 404: msg = "не найдено (\(msg)). Для приватных репозиториев нужен токен с доступом"
-			case 409 where msg.contains("empty"): msg = "репозиторий пустой — создай в нём хотя бы README на GitHub"
+			case 401: msg = L("the token is invalid or expired (%@)", msg)
+			case 403 where msg.lowercased().contains("rate limit"): msg = L("rate limit exceeded — add a token in Settings")
+			case 403: msg = L("access denied (%@). Check the token permissions: Contents and Pull requests — Read and write", msg)
+			case 404: msg = L("not found (%@). Private repositories need a token with access", msg)
+			case 409 where msg.contains("empty"): msg = L("the repository is empty — create at least a README in it on GitHub")
 			default: break
 			}
 			throw StoreError("GitHub \(code): \(msg)")
@@ -129,7 +129,7 @@ enum GH {
 		if !t.isEmpty { req.setValue("Bearer " + t, forHTTPHeaderField: "Authorization") }
 		let (d, r) = try await URLSession.shared.data(for: req)
 		let code = (r as? HTTPURLResponse)?.statusCode ?? 0
-		guard code == 200 else { throw StoreError("GitHub \(code) при скачивании архива") }
+		guard code == 200 else { throw StoreError(L("GitHub %@ while downloading the archive", code)) }
 		return d
 	}
 
@@ -234,7 +234,7 @@ enum Git {
 	}
 
 	static func status(_ dir: URL) throws -> [GitChange] {
-		guard let st = GitState.load(dir) else { throw StoreError("Проект не связан с GitHub") }
+		guard let st = GitState.load(dir) else { throw StoreError(L("The project is not linked to GitHub")) }
 		let local = scan(dir, tracked: st.files)
 		var out: [GitChange] = []
 		for (p, s) in local {
@@ -247,20 +247,20 @@ enum Git {
 
 	static func refSHA(_ st: GitState, _ branch: String) async throws -> String {
 		let r = try await GH.obj("GET", st.api + "/git/ref/heads/" + GH.esc(branch))
-		guard let sha = (r["object"] as? [String: Any])?["sha"] as? String else { throw StoreError("Нет ветки \(branch)") }
+		guard let sha = (r["object"] as? [String: Any])?["sha"] as? String else { throw StoreError(L("No branch %@", branch)) }
 		return sha
 	}
 
 	static func treeOf(_ st: GitState, _ commit: String) async throws -> String {
 		let c = try await GH.obj("GET", st.api + "/git/commits/" + commit)
-		guard let t = (c["tree"] as? [String: Any])?["sha"] as? String else { throw StoreError("Не удалось прочитать коммит") }
+		guard let t = (c["tree"] as? [String: Any])?["sha"] as? String else { throw StoreError(L("Could not read the commit")) }
 		return t
 	}
 
 	static func blob(_ st: GitState, _ sha: String) async throws -> Data {
 		let b = try await GH.obj("GET", st.api + "/git/blobs/" + sha)
 		guard let c = b["content"] as? String, let d = Data(base64Encoded: c, options: .ignoreUnknownCharacters) else {
-			throw StoreError("Не удалось скачать файл")
+			throw StoreError(L("Could not download the file"))
 		}
 		return d
 	}
@@ -278,9 +278,9 @@ enum Git {
 	// ---------------------------------------------------------- клон
 
 	static func clone(_ spec: String, branch: String, into root: URL, progress: @escaping (String) -> Void) async throws -> URL {
-		guard let pr = GH.parseRepo(spec) else { throw StoreError("Укажи репозиторий: owner/repo или ссылку") }
+		guard let pr = GH.parseRepo(spec) else { throw StoreError(L("Enter a repository: owner/repo or a link")) }
 		let (owner, repo) = pr
-		progress("Читаю \(owner)/\(repo)…")
+		progress(L("Reading %@/%@…", owner, repo))
 		let info = try await GH.obj("GET", "/repos/\(owner)/\(repo)")
 		let def = info["default_branch"] as? String ?? "main"
 		let br = branch.isEmpty ? def : branch
@@ -288,9 +288,9 @@ enum Git {
 		st.head = try await refSHA(st, br)
 		st.tree = try await treeOf(st, st.head)
 
-		progress("Скачиваю архив…")
+		progress(L("Downloading the archive…"))
 		let tgz = try await GH.download(st.api + "/tarball/" + st.head)
-		progress("Распаковываю \(ByteCountFormatter.string(fromByteCount: Int64(tgz.count), countStyle: .file))…")
+		progress(L("Unpacking %@…", ByteCountFormatter.string(fromByteCount: Int64(tgz.count), countStyle: .file)))
 		let entries = try untar(try gunzip(tgz))
 
 		let fm = FileManager.default
@@ -315,12 +315,12 @@ enum Git {
 	// ---------------------------------------------------------- коммит и пуш
 
 	static func commit(_ dir: URL, message: String, paths: Set<String>, progress: @escaping (String) -> Void) async throws {
-		guard var st = GitState.load(dir) else { throw StoreError("Проект не связан с GitHub") }
+		guard var st = GitState.load(dir) else { throw StoreError(L("The project is not linked to GitHub")) }
 		let changes = try status(dir).filter { paths.contains($0.path) }
-		guard !changes.isEmpty else { throw StoreError("Нечего коммитить") }
-		progress("Проверяю ветку \(st.branch)…")
+		guard !changes.isEmpty else { throw StoreError(L("Nothing to commit")) }
+		progress(L("Checking branch %@…", st.branch))
 		guard try await refSHA(st, st.branch) == st.head else {
-			throw StoreError("На GitHub в ветке \(st.branch) появились новые коммиты. Сначала нажми «Получить изменения».")
+			throw StoreError(L("Branch %@ on GitHub has new commits. Tap “Pull changes” first.", st.branch))
 		}
 		var entries: [[String: Any]] = []
 		var shas: [String: String] = [:]
@@ -330,19 +330,19 @@ enum Git {
 				entries.append(["path": c.path, "mode": mode, "type": "blob", "sha": NSNull()])
 				continue
 			}
-			progress("Загружаю \(i + 1)/\(changes.count): \(c.path)")
+			progress(L("Uploading %@/%@: %@", i + 1, changes.count, c.path))
 			let data = try Data(contentsOf: dir.appendingPathComponent(c.path))
 			let b = try await GH.obj("POST", st.api + "/git/blobs", ["content": data.base64EncodedString(), "encoding": "base64"])
 			let sha = b["sha"] as? String ?? blobSHA(data)
 			shas[c.path] = sha
 			entries.append(["path": c.path, "mode": mode, "type": "blob", "sha": sha])
 		}
-		progress("Создаю коммит…")
+		progress(L("Creating the commit…"))
 		guard let tree = try await GH.obj("POST", st.api + "/git/trees", ["base_tree": st.tree, "tree": entries])["sha"] as? String,
 		      let commit = try await GH.obj("POST", st.api + "/git/commits",
 		                                    ["message": message, "tree": tree, "parents": [st.head]])["sha"] as? String
-		else { throw StoreError("GitHub не вернул SHA коммита") }
-		progress("Отправляю в \(st.branch)…")
+		else { throw StoreError(L("GitHub did not return the commit SHA")) }
+		progress(L("Pushing to %@…", st.branch))
 		try await GH.call("PATCH", st.api + "/git/refs/heads/" + GH.esc(st.branch), ["sha": commit, "force": false])
 		st.head = commit
 		st.tree = tree
@@ -364,15 +364,15 @@ enum Git {
 	/// Подтягивает ветку `branch` (по умолчанию текущую). Локальные правки сохраняются;
 	/// если файл изменён и тут, и на GitHub — остаётся локальная версия, а GitHub-версия ложится рядом как <файл>.remote.
 	static func sync(_ dir: URL, branch: String? = nil, progress: @escaping (String) -> Void) async throws -> SyncResult {
-		guard var st = GitState.load(dir) else { throw StoreError("Проект не связан с GitHub") }
+		guard var st = GitState.load(dir) else { throw StoreError(L("The project is not linked to GitHub")) }
 		let br = branch ?? st.branch
-		progress("Проверяю \(br)…")
+		progress(L("Checking %@…", br))
 		let head = try await refSHA(st, br)
 		if head == st.head && br == st.branch { return SyncResult(upToDate: true) }
 		let treeSha = try await treeOf(st, head)
-		progress("Получаю список файлов…")
+		progress(L("Fetching the file list…"))
 		let t = try await GH.obj("GET", st.api + "/git/trees/\(treeSha)?recursive=1")
-		if t["truncated"] as? Bool == true { throw StoreError("Репозиторий слишком большой для синхронизации через API") }
+		if t["truncated"] as? Bool == true { throw StoreError(L("The repository is too large to sync over the API")) }
 		var remote: [String: String] = [:], modes: [String: String] = [:]
 		for e in t["tree"] as? [[String: Any]] ?? [] where e["type"] as? String == "blob" {
 			guard let p = e["path"] as? String, let s = e["sha"] as? String, safe(p) else { continue }
@@ -390,7 +390,7 @@ enum Git {
 			let u = dir.appendingPathComponent(p)
 			if loc == base {
 				if let rem {
-					progress("Скачиваю \(p)")
+					progress(L("Downloading %@", p))
 					let d = try await blob(st, rem)
 					try fm.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
 					try d.write(to: u)
@@ -419,7 +419,7 @@ enum Git {
 	}
 
 	static func switchBranch(_ dir: URL, to branch: String, progress: @escaping (String) -> Void) async throws {
-		guard try status(dir).isEmpty else { throw StoreError("Сначала закоммить или отмени изменения — потом переключай ветку") }
+		guard try status(dir).isEmpty else { throw StoreError(L("Commit or discard your changes before switching branches")) }
 		_ = try await sync(dir, branch: branch, progress: progress)
 	}
 
@@ -443,10 +443,10 @@ enum Git {
 	// ---------------------------------------------------------- новый репозиторий из проекта
 
 	static func publish(_ dir: URL, name: String, isPrivate: Bool, progress: @escaping (String) -> Void) async throws {
-		progress("Создаю репозиторий…")
+		progress(L("Creating the repository…"))
 		let r = try await GH.obj("POST", "/user/repos", ["name": name, "private": isPrivate, "auto_init": true])
 		guard let full = r["full_name"] as? String, let pr = GH.parseRepo(full) else {
-			throw StoreError("GitHub не вернул имя репозитория")
+			throw StoreError(L("GitHub did not return the repository name"))
 		}
 		let (owner, repo) = pr
 		let def = r["default_branch"] as? String ?? "main"
@@ -458,7 +458,7 @@ enum Git {
 			}
 		}
 		let all = Set(try status(dir).map(\.path))
-		if !all.isEmpty { try await commit(dir, message: "Первый коммит из Forge", paths: all, progress: progress) }
+		if !all.isEmpty { try await commit(dir, message: L("Initial commit from Forge"), paths: all, progress: progress) }
 	}
 
 	// ---------------------------------------------------------- история, PR, issues
@@ -478,7 +478,7 @@ enum Git {
 		return (try await GH.obj("GET", st.api + "/commits/" + sha)["files"] as? [[String: Any]] ?? []).map {
 			GHFile(name: $0["filename"] as? String ?? "", status: $0["status"] as? String ?? "",
 			       additions: $0["additions"] as? Int ?? 0, deletions: $0["deletions"] as? Int ?? 0,
-			       patch: $0["patch"] as? String ?? "(бинарный файл или слишком большой дифф)")
+			       patch: $0["patch"] as? String ?? L("(binary file or diff too large)"))
 		}
 	}
 
@@ -494,13 +494,13 @@ enum Git {
 	}
 
 	static func openPR(_ dir: URL, title: String, body: String, base: String) async throws -> String {
-		guard let st = GitState.load(dir) else { throw StoreError("Проект не связан с GitHub") }
+		guard let st = GitState.load(dir) else { throw StoreError(L("The project is not linked to GitHub")) }
 		let r = try await GH.obj("POST", st.api + "/pulls", ["title": title, "body": body, "head": st.branch, "base": base])
 		return r["html_url"] as? String ?? ""
 	}
 
 	static func createIssue(_ dir: URL, title: String, body: String) async throws -> String {
-		guard let st = GitState.load(dir) else { throw StoreError("Проект не связан с GitHub") }
+		guard let st = GitState.load(dir) else { throw StoreError(L("The project is not linked to GitHub")) }
 		return try await GH.obj("POST", st.api + "/issues", ["title": title, "body": body])["html_url"] as? String ?? ""
 	}
 
@@ -509,19 +509,19 @@ enum Git {
 	/// gzip = заголовок + raw DEFLATE + CRC; COMPRESSION_ZLIB в Compression — это как раз raw DEFLATE.
 	static func gunzip(_ d: Data) throws -> Data {
 		let bytes = [UInt8](d)
-		guard bytes.count > 18, bytes[0] == 0x1f, bytes[1] == 0x8b, bytes[2] == 8 else { throw StoreError("Архив не gzip") }
+		guard bytes.count > 18, bytes[0] == 0x1f, bytes[1] == 0x8b, bytes[2] == 8 else { throw StoreError(L("The archive is not gzip")) }
 		let flags = bytes[3]
 		var i = 10
 		if flags & 4 != 0 { i += 2 + Int(bytes[i]) + Int(bytes[i + 1]) << 8 }
 		if flags & 8 != 0 { while i < bytes.count && bytes[i] != 0 { i += 1 }; i += 1 }
 		if flags & 16 != 0 { while i < bytes.count && bytes[i] != 0 { i += 1 }; i += 1 }
 		if flags & 2 != 0 { i += 2 }
-		guard i < bytes.count else { throw StoreError("Битый gzip") }
+		guard i < bytes.count else { throw StoreError(L("Corrupt gzip")) }
 
 		let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
 		defer { stream.deallocate() }
 		guard compression_stream_init(stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else {
-			throw StoreError("Не удалось распаковать")
+			throw StoreError(L("Could not unpack"))
 		}
 		defer { compression_stream_destroy(stream) }
 		let cap = 1 << 20
@@ -537,7 +537,7 @@ enum Git {
 				let s = compression_stream_process(stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
 				out.append(dst, count: cap - stream.pointee.dst_size)
 				if s == COMPRESSION_STATUS_END { break }
-				if s != COMPRESSION_STATUS_OK { throw StoreError("Ошибка распаковки архива") }
+				if s != COMPRESSION_STATUS_OK { throw StoreError(L("Archive unpacking error")) }
 			}
 		}
 		return out
@@ -569,7 +569,7 @@ enum Git {
 			let size = num(i + 124, 12)
 			let type = b[i + 156]
 			let start = i + 512
-			guard start + size <= b.count else { throw StoreError("Архив обрезан") }
+			guard start + size <= b.count else { throw StoreError(L("The archive is truncated")) }
 			let body = Data(b[start..<(start + size)])
 			switch type {
 			case UInt8(ascii: "x"):

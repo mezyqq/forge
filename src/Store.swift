@@ -24,13 +24,13 @@ struct FileNode: Identifiable, Hashable {
 /// ipa.conf — bash, но на практике строки вида KEY="value" # комментарий.
 /// Правим значение прямо в строке, чтобы не потерять комментарии пользователя.
 enum Conf {
-	static let fields: [(String, String)] = [
-		("NAME", "Имя (исполняемый файл)"), ("DISPLAY_NAME", "Имя на экране"), ("BUNDLE_ID", "Bundle ID"),
-		("VERSION", "Версия"), ("BUILD", "Номер сборки"), ("MIN_IOS", "Минимальная iOS"),
-		("FRAMEWORKS", "Фреймворки"), ("LIBS", "Библиотеки (-l)"), ("CFLAGS", "CFLAGS"),
+	static var fields: [(String, String)] { [
+		("NAME", L("Name (executable)")), ("DISPLAY_NAME", L("Display name")), ("BUNDLE_ID", "Bundle ID"),
+		("VERSION", L("Version")), ("BUILD", L("Build number")), ("MIN_IOS", L("Minimum iOS")),
+		("FRAMEWORKS", L("Frameworks")), ("LIBS", L("Libraries (-l)")), ("CFLAGS", "CFLAGS"),
 		("SWIFTFLAGS", "SWIFTFLAGS"), ("LDFLAGS", "LDFLAGS"), ("BRIDGING_HEADER", "Bridging header"),
-		("ICON", "Иконка (PNG 1024)"), ("ENTITLEMENTS", "Entitlements"),
-	]
+		("ICON", L("Icon (PNG 1024)")), ("ENTITLEMENTS", "Entitlements"),
+	] }
 
 	private static func valueRange(_ line: String, _ key: String) -> Range<String.Index>? {
 		guard line.hasPrefix(key + "=\"") else { return nil }
@@ -148,10 +148,10 @@ final class ProjectStore: ObservableObject {
 	private func checkedNewProjectURL(_ name: String) throws -> URL {
 		let name = name.trimmingCharacters(in: .whitespaces)
 		guard !name.isEmpty, !name.contains("/"), !name.contains(" "), !name.hasPrefix(".") else {
-			throw StoreError("Имя без пробелов и «/»")
+			throw StoreError(L("A name without spaces or “/”"))
 		}
 		let dir = root.appendingPathComponent(name)
-		guard !fm.fileExists(atPath: dir.path) else { throw StoreError("Проект \(name) уже есть") }
+		guard !fm.fileExists(atPath: dir.path) else { throw StoreError(L("Project %@ already exists", name)) }
 		return dir
 	}
 
@@ -198,8 +198,8 @@ final class ProjectStore: ObservableObject {
 
 	func move(_ from: String, to: String, in p: Project) throws {
 		let src = try resolve(from, in: p), dst = try resolve(to, in: p)
-		guard fm.fileExists(atPath: src.path) else { throw StoreError("Нет \(from)") }
-		guard !fm.fileExists(atPath: dst.path) else { throw StoreError("\(to) уже существует") }
+		guard fm.fileExists(atPath: src.path) else { throw StoreError(L("No %@", from)) }
+		guard !fm.fileExists(atPath: dst.path) else { throw StoreError(L("%@ already exists", to)) }
 		try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
 		try fm.moveItem(at: src, to: dst)
 		fsVersion += 1
@@ -242,7 +242,7 @@ final class ProjectStore: ObservableObject {
 	func resolve(_ rel: String, in p: Project) throws -> URL {
 		let parts = rel.split(separator: "/")
 		guard !rel.hasPrefix("/"), !parts.isEmpty, !parts.contains(where: { $0 == ".." || $0 == "." }) else {
-			throw StoreError("Недопустимый путь: \(rel)")
+			throw StoreError(L("Invalid path: %@", rel))
 		}
 		return p.url.appendingPathComponent(rel)
 	}
@@ -295,13 +295,13 @@ enum Template: String, CaseIterable, Identifiable {
 		switch self {
 		case .python: return "Python"
 		case .js: return "JavaScript"
-		case .web: return "Веб-сайт (HTML/CSS/JS)"
+		case .web: return L("Website (HTML/CSS/JS)")
 		case .lua: return "Lua"
-		case .cscript: return "C (консоль)"
+		case .cscript: return L("C (console)")
 		case .objc: return "Objective-C"
-		case .c: return "C (UIKit через runtime)"
+		case .c: return L("C (UIKit via runtime)")
 		case .objcpp: return "Objective-C++"
-		case .empty: return "Пустое приложение"
+		case .empty: return L("Empty app")
 		case .swift: return "Swift (UIKit)"
 		case .swiftui: return "SwiftUI"
 		}
@@ -321,20 +321,20 @@ enum Template: String, CaseIterable, Identifiable {
 		switch self {
 		case .python: return [
 			("main.py", """
-			# Запуск: кнопка ▶. Работает pocketpy — Python 3 без pip, с базовыми модулями (math, random, json, time…).
+			# \(L("Run: the ▶ button. Powered by pocketpy — Python 3 without pip, with basic modules (math, random, json, time…)."))
 			import utils
 
-			name = input("Как тебя зовут? ")
+			name = input("\(L("What is your name?")) ")
 			print(utils.greet(name))
 
 			squares = [n * n for n in range(1, 11)]
-			print("Квадраты:", squares)
-			print("Сумма:", sum(squares))
+			print("\(L("Squares:"))", squares)
+			print("\(L("Sum:"))", sum(squares))
 
 			"""),
 			("utils.py", """
 			def greet(name):
-			    return f"Привет, {name or 'мир'}!"
+			    return f"\(L("Hello")), {name or '\(L("world"))'}!"
 
 			"""),
 		]
@@ -343,17 +343,17 @@ enum Template: String, CaseIterable, Identifiable {
 			// Запуск: кнопка ▶. JavaScriptCore: console.log, prompt(), require('./файл'), setTimeout.
 			const { greet } = require('./utils');
 
-			const name = prompt('Как тебя зовут?');
+			const name = prompt('\(L("What is your name?"))');
 			console.log(greet(name));
 
 			const squares = Array.from({ length: 10 }, (_, i) => (i + 1) ** 2);
-			console.log('Квадраты:', squares);
+			console.log('\(L("Squares:"))', squares);
 
-			setTimeout(() => console.log('Прошла секунда'), 1000);
+			setTimeout(() => console.log('\(L("A second has passed"))'), 1000);
 
 			"""),
 			("utils.js", """
-			module.exports.greet = (name) => `Привет, ${name || 'мир'}!`;
+			module.exports.greet = (name) => `\(L("Hello")), ${name || '\(L("world"))'}!`;
 
 			"""),
 		]
@@ -370,8 +370,8 @@ enum Template: String, CaseIterable, Identifiable {
 			<body>
 			  <main>
 			    <h1>\(name)</h1>
-			    <p>Нажато: <span id="count">0</span></p>
-			    <button id="btn">Нажми меня</button>
+			    <p>\(L("Tapped:")) <span id="count">0</span></p>
+			    <button id="btn">\(L("Tap me"))</button>
 			  </main>
 			  <script src="script.js"></script>
 			</body>
@@ -390,31 +390,31 @@ enum Template: String, CaseIterable, Identifiable {
 			document.getElementById('btn').addEventListener('click', () => {
 			  n += 1;
 			  document.getElementById('count').textContent = n;
-			  console.log('клик', n);
+			  console.log('\(L("click"))', n);
 			});
 
 			"""),
 		]
 		case .lua: return [
 			("main.lua", """
-			-- Запуск: кнопка ▶. Lua 5.4.
+			-- \(L("Run: the ▶ button. Lua 5.4."))
 			local utils = require("utils")
 
-			io.write("Как тебя зовут? ")
+			io.write("\(L("What is your name?")) ")
 			local name = io.read("l")
 			print(utils.greet(name))
 
 			local squares = {}
 			for i = 1, 10 do squares[#squares + 1] = i * i end
-			print("Квадраты: " .. table.concat(squares, ", "))
+			print("\(L("Squares:")) " .. table.concat(squares, ", "))
 
 			"""),
 			("utils.lua", """
 			local M = {}
 
 			function M.greet(name)
-			  if name == nil or name == "" then name = "мир" end
-			  return "Привет, " .. name .. "!"
+			  if name == nil or name == "" then name = "\(L("world"))" end
+			  return "\(L("Hello")), " .. name .. "!"
 			end
 
 			return M
@@ -423,8 +423,8 @@ enum Template: String, CaseIterable, Identifiable {
 		]
 		case .cscript: return [
 			("main.c", """
-			/* Запуск: кнопка ▶. Интерпретатор picoc: большая часть C89, stdio/stdlib/string/math.
-			   Ограничение: поля структур объявляй по одному на строку. */
+			/* \(L("Run: the ▶ button. The picoc interpreter: most of C89, stdio/stdlib/string/math."))
+			   \(L("Limitation: declare struct fields one per line.")) */
 			#include <stdio.h>
 			#include <string.h>
 
@@ -440,13 +440,13 @@ enum Template: String, CaseIterable, Identifiable {
 			    struct Point p;
 			    int i;
 
-			    printf("Как тебя зовут? ");
+			    printf("\(L("What is your name?")) ");
 			    scanf("%63s", name);
-			    printf("Привет, %s!\\n", name);
+			    printf("\(L("Hello")), %s!\\n", name);
 
 			    p.x = 3;
 			    p.y = 4;
-			    printf("Квадрат расстояния: %d\\n", square(p.x) + square(p.y));
+			    printf("\(L("Squared distance")): %d\\n", square(p.x) + square(p.y));
 
 			    for (i = 1; i <= 5; i++) printf("%d ", square(i));
 			    printf("\\n");
@@ -463,7 +463,7 @@ enum Template: String, CaseIterable, Identifiable {
 		let bid = name.lowercased().filter { $0.isLetter || $0.isNumber }
 		let fw = self == .swiftui ? "Foundation UIKit SwiftUI" : "Foundation UIKit"
 		return """
-		# Конфиг проекта. Это bash — можно использовать переменные.
+		# \(L("Project config. It is bash — variables can be used."))
 		NAME="\(name)"
 		BUNDLE_ID="com.example.\(bid)"
 		VERSION="1.0"
@@ -471,12 +471,12 @@ enum Template: String, CaseIterable, Identifiable {
 		MIN_IOS="15.0"
 		FRAMEWORKS="\(fw)"   # -framework X
 		LIBS=""                         # -lX
-		CFLAGS=""                       # для C/C++/ObjC
+		CFLAGS=""                       # \(L("for C/C++/ObjC"))
 		SWIFTFLAGS=""
 		LDFLAGS=""
-		BRIDGING_HEADER=""              # напр. src/Bridging.h — ObjC/C из Swift
-		ICON=""                         # напр. res/icon.png (квадрат 1024x1024)
-		ENTITLEMENTS=""                 # напр. app.entitlements
+		BRIDGING_HEADER=""              # \(L("e.g. src/Bridging.h — ObjC/C from Swift"))
+		ICON=""                         # \(L("e.g. res/icon.png (1024x1024 square)"))
+		ENTITLEMENTS=""                 # \(L("e.g. app.entitlements"))
 
 		"""
 	}
@@ -498,7 +498,7 @@ enum Template: String, CaseIterable, Identifiable {
 				UILabel *l = [[UILabel alloc] initWithFrame:vc.view.bounds];
 				l.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 				l.textAlignment = NSTextAlignmentCenter;
-				l.text = @"Привет (ObjC)";
+				l.text = @"\(L("Hello")) (ObjC)";
 				[vc.view addSubview:l];
 				self.window.rootViewController = vc;
 				[self.window makeKeyAndVisible];
@@ -560,7 +560,7 @@ enum Template: String, CaseIterable, Identifiable {
 					let l = UILabel(frame: vc.view.bounds)
 					l.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 					l.textAlignment = .center
-					l.text = "Привет (Swift)"
+					l.text = "\(L("Hello")) (Swift)"
 					vc.view.addSubview(l)
 					let w = UIWindow(frame: UIScreen.main.bounds)
 					w.rootViewController = vc
@@ -586,7 +586,7 @@ enum Template: String, CaseIterable, Identifiable {
 			- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
 				std::vector<int> v(10);
 				std::iota(v.begin(), v.end(), 1);
-				std::string s = "Сумма 1..10 = " + std::to_string(std::accumulate(v.begin(), v.end(), 0));
+				std::string s = "\(L("Sum 1..10 = "))" + std::to_string(std::accumulate(v.begin(), v.end(), 0));
 
 				self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
 				UIViewController *vc = [UIViewController new];
@@ -619,8 +619,8 @@ enum Template: String, CaseIterable, Identifiable {
 				var body: some Scene {
 					WindowGroup {
 						VStack(spacing: 16) {
-							Text("Привет (SwiftUI)")
-							Button("Нажато: \\(n)") { n += 1 }
+							Text("\(L("Hello")) (SwiftUI)")
+							Button("\(L("Tapped:")) \\(n)") { n += 1 }
 						}
 					}
 				}
