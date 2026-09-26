@@ -46,6 +46,18 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
   and LLM7 (GLM-5.3-Flash, MiniMax-M2.7, Codestral).
 - **GitHub** over the API (no git): clone, commit and push, pull changes, branches, history with diffs,
   pull requests, issues, publishing a project to a new repository. Sign-in with a Personal Access Token.
+- **Preview window**: the `forge_preview()` screen (Run in Forge) can be minimized into a live draggable window over the
+  editor, with a log panel (stdout/stderr, NSLog). Optional (Settings → Features, off by default): **live reload**
+  (saving a source rebuilds and swaps the screen), **AI screenshots** of the preview (`screenshot` tool), **voice input**
+  in the chat, **update check on launch**.
+- **Pictures in the chat**: attach up to 4 photos to a message (the model must support images).
+- **Tabs** of open files on iPad.
+- **JIT status** (Settings → Native code): recognizes debugger-based JIT (StikDebug, SideStore, LiveContainer) and JIT
+  that allows executable memory (e.g. Lara); a manual override for tools Forge cannot detect.
+- **Other versions and data snapshots** (Settings → Updates): install any release, including rolling back. Before every
+  version switch, projects (without `build/`) and settings are packed into an LZMA snapshot; coming back to a newer
+  version offers to restore its data. Snapshots can be restored, shared or deleted; restoring saves the current state
+  first. AI keys and the GitHub account live in the Keychain and are not affected.
 - **Updates** (Settings → Updates): checks GitHub Releases, downloads the new `.ipa` and, inside LiveContainer, replaces
   Forge in place (LiveContainer's `LCAppInfo.plist` is kept, so projects, settings, keys and GitHub stay); then
   Restart → LiveContainer opens → tap Forge (LiveContainer re-signs it on that launch). Outside LiveContainer the

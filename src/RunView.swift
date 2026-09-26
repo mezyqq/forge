@@ -320,47 +320,36 @@ struct RunSheet: View {
 
 // MARK: быстрый запуск (JIT)
 
-/// Проект, собранный прямо в память Forge (без установки): консоль программы, а если в проекте есть
-/// `UIViewController *forge_preview(void)` — её экран здесь же.
+/// Проект, собранный прямо в память Forge (без установки): консоль сборки и программы. Если в проекте есть
+/// `UIViewController *forge_preview(void)`, консоль закрывается и экран открывает PreviewHost.
 struct QuickRunView: View {
 	let project: URL
 	@ObservedObject private var runner = Runner.shared
 	@Environment(\.dismiss) private var dismiss
 	@State private var input = ""
-	@State private var preview: UIViewController?
-	@State private var showConsole = false
 	@State private var error: String?
 
 	var body: some View {
 		NavigationStack {
-			Group {
-				if let preview, !showConsole {
-					HostedController(vc: preview).id(ObjectIdentifier(preview)).ignoresSafeArea(edges: .bottom)
-				} else {
-					VStack(spacing: 0) {
-						ConsoleText(output: runner.output)
-						Divider()
-						HStack(spacing: 8) {
-							TextField(runner.running ? L("program input") : L("program is not running"), text: $input)
-								.textInputAutocapitalization(.never)
-								.autocorrectionDisabled()
-								.textFieldStyle(.roundedBorder)
-								.onSubmit(send)
-								.disabled(!runner.running)
-							Button(action: send) { Image(systemName: "return") }.disabled(!runner.running)
-						}
-						.padding(8)
-					}
+			VStack(spacing: 0) {
+				ConsoleText(output: runner.output)
+				Divider()
+				HStack(spacing: 8) {
+					TextField(runner.running ? L("program input") : L("program is not running"), text: $input)
+						.textInputAutocapitalization(.never)
+						.autocorrectionDisabled()
+						.textFieldStyle(.roundedBorder)
+						.onSubmit(send)
+						.disabled(!runner.running)
+					Button(action: send) { Image(systemName: "return") }.disabled(!runner.running)
 				}
+				.padding(8)
 			}
 			.navigationTitle(project.lastPathComponent)
 			.navigationBarTitleDisplayMode(.inline)
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) { Button(L("Close")) { dismiss() } }
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
-					if preview != nil {
-						Button { showConsole.toggle() } label: { Image(systemName: showConsole ? "iphone" : "terminal") }
-					}
 					if runner.running {
 						Button { runner.stop() } label: { Image(systemName: "stop.fill").foregroundStyle(.red) }
 					} else {
@@ -380,13 +369,16 @@ struct QuickRunView: View {
 	}
 
 	private func start() {
-		preview = nil
-		showConsole = false
+		PreviewHost.shared.close()
 		runner.quickRun(project) { jit in
 			guard let jit else { return }
 			switch Clang.previewController(jit) {
-			case .success(let vc): preview = vc
-			case .failure(let f): error = f.message; showConsole = true
+			case .success(let vc):
+				// показываем поверх всего приложения, когда эта консоль уже закрыта
+				dismiss()
+				let p = project
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { PreviewHost.shared.show(vc, project: p) }
+			case .failure(let f): error = f.message
 			}
 		}
 	}
@@ -398,13 +390,31 @@ struct HostedController: UIViewControllerRepresentable {
 
 	func makeUIViewController(context: Context) -> UIViewController {
 		let host = UIViewController()
-		host.addChild(vc)
-		vc.view.frame = host.view.bounds
-		vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-		host.view.addSubview(vc.view)
-		vc.didMove(toParent: host)
+		HostedController.adopt(vc, by: host)
+		fill(host)
 		return host
 	}
 
-	func updateUIViewController(_ host: UIViewController, context: Context) {}
+	func updateUIViewController(_ host: UIViewController, context: Context) {
+		if vc.parent !== host { HostedController.adopt(vc, by: host) }
+		fill(host)
+	}
+
+	private func fill(_ host: UIViewController) {
+		vc.view.transform = .identity
+		vc.view.frame = host.view.bounds
+		vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+	}
+
+	/// Перенести контроллер в новый контейнер (полный экран ↔ мини-окно).
+	static func adopt(_ vc: UIViewController, by host: UIViewController) {
+		if vc.parent != nil {
+			vc.willMove(toParent: nil)
+			vc.view.removeFromSuperview()
+			vc.removeFromParent()
+		}
+		host.addChild(vc)
+		host.view.addSubview(vc.view)
+		vc.didMove(toParent: host)
+	}
 }

@@ -6,6 +6,7 @@
 typedef bool (*JSShouldTerminateCallback)(JSContextRef ctx, void *context);
 void JSContextGroupSetExecutionTimeLimit(JSContextGroupRef group, double limit, JSShouldTerminateCallback callback, void *context);
 #include "forge_crash.h"
+#include "forge_jit.h"
 // Встроенный компилятор (compiler/ — github.com/mezyqq/ios-compiler); без него Forge собирается и так
 #if __has_include("../compiler/ioscc.h")
 #include "../compiler/ioscc.h"

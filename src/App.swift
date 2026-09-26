@@ -9,12 +9,14 @@ struct ForgeApp: App {
 	init() {
 		CrashLog.install()
 		Updater.cleanup()  // старый бандл после обновления
+		Snapshots.checkVersionChange()  // вернулись на новую версию — предложим её данные
 	}
 
 	var body: some Scene {
 		WindowGroup {
 			ProjectsView()
 				.environmentObject(store)
+				.modifier(PreviewHostModifier())
 				.tint(Theme.find(themeID).accentColor)
 				.id(language)  // L("…") читается при построении — смена языка перестраивает всё
 		}

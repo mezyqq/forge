@@ -1,3 +1,5 @@
+import PhotosUI
+import _PhotosUI_SwiftUI  // PhotosPicker: cross-import overlay сам не подхватывается
 import SwiftUI
 import UIKit
 
@@ -7,6 +9,12 @@ struct ChatView: View {
 	@State private var input = ""
 	@State private var showTodos = true
 	@State private var showReview = false
+	@State private var picked: [PhotosPickerItem] = []
+	@State private var attached: [Data] = []
+	@StateObject private var voice = VoiceInput()
+	@State private var voiceBase = ""
+	@State private var error: String?
+	@AppStorage(Feature.voiceInput) private var voiceOn = false
 
 	var body: some View {
 		VStack(spacing: 0) {
@@ -51,20 +59,89 @@ struct ChatView: View {
 				.onAppear { proxy.scrollTo("end", anchor: .bottom) }
 			}
 			Divider()
+			if !attached.isEmpty { attachmentsRow }
 			HStack(alignment: .bottom, spacing: 8) {
-				TextField(L("What should I do?"), text: $input, axis: .vertical)
+				PhotosPicker(selection: $picked, maxSelectionCount: 4, matching: .images) {
+					Image(systemName: "photo.on.rectangle.angled").font(.title3)
+				}
+				.disabled(agent.busy)
+				TextField(voice.listening ? L("Listening…") : L("What should I do?"), text: $input, axis: .vertical)
 					.lineLimit(1...6)
 					.textFieldStyle(.roundedBorder)
+				if voiceOn && !agent.busy {
+					Button(action: toggleVoice) {
+						Image(systemName: voice.listening ? "mic.fill" : "mic").font(.title3)
+							.foregroundStyle(voice.listening ? Color.red : Color.accentColor)
+					}
+				}
 				if agent.busy {
 					Button { agent.stop() } label: { Image(systemName: "stop.circle.fill").font(.title) }
 				} else {
 					Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title) }
-						.disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+						.disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty)
 				}
 			}
 			.padding(8)
 		}
 		.sheet(isPresented: $showReview) { ReviewView(agent: agent) }
+		.onChange(of: picked) { items in loadPicked(items) }
+		.onChange(of: voice.text) { t in if voice.listening { input = voiceBase + t } }
+		.onDisappear { voice.stop() }
+		.errorAlert($error)
+	}
+
+	/// Выбранные фото над полем ввода.
+	private var attachmentsRow: some View {
+		ScrollView(.horizontal, showsIndicators: false) {
+			HStack(spacing: 8) {
+				ForEach(Array(attached.enumerated()), id: \.offset) { i, d in
+					if let img = UIImage(data: d) {
+						Image(uiImage: img).resizable().scaledToFill()
+							.frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+							.overlay(alignment: .topTrailing) {
+								Button { attached.remove(at: i) } label: {
+									Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical)
+								}
+								.offset(x: 6, y: -6)
+							}
+					}
+				}
+			}
+			.padding(.horizontal, 10)
+			.padding(.top, 8)
+		}
+	}
+
+	private func loadPicked(_ items: [PhotosPickerItem]) {
+		guard !items.isEmpty else { return }
+		Task {
+			for it in items {
+				if let d = try? await it.loadTransferable(type: Data.self), let img = UIImage(data: d), let jpeg = ChatView.jpeg(img) {
+					attached.append(jpeg)
+				}
+			}
+			picked = []
+		}
+	}
+
+	/// JPEG для модели: длинная сторона до 1568 px (больше модели всё равно уменьшают).
+	static func jpeg(_ img: UIImage) -> Data? {
+		let s = img.size, m = max(s.width, s.height)
+		guard m > 0 else { return nil }
+		let k = min(1, 1568 / m)
+		let size = CGSize(width: (s.width * k).rounded(), height: (s.height * k).rounded())
+		let format = UIGraphicsImageRendererFormat()
+		format.scale = 1
+		let out = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+		return out.jpegData(compressionQuality: 0.8)
+	}
+
+	private func toggleVoice() {
+		if voice.listening { voice.stop(); return }
+		voiceBase = input.isEmpty || input.hasSuffix(" ") ? input : input + " "
+		Task {
+			do { try await voice.start() } catch { self.error = error.localizedDescription }
+		}
 	}
 
 	/// Файлы, которые поменял агент: просмотреть дифф, оставить или откатить.
@@ -142,10 +219,12 @@ struct ChatView: View {
 	}
 
 	private func send() {
+		voice.stop()
 		let t = input.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard !t.isEmpty else { return }
+		guard !t.isEmpty || !attached.isEmpty else { return }
 		input = ""
-		agent.send(t)
+		agent.send(t, images: attached)
+		attached = []
 	}
 }
 
@@ -156,11 +235,16 @@ struct Bubble: View {
 		Group {
 			switch item.kind {
 			case .user:
-				Text(item.text)
-					.textSelection(.enabled)
-					.padding(10)
-					.background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
-					.frame(maxWidth: .infinity, alignment: .trailing)
+				VStack(alignment: .trailing, spacing: 6) {
+					if !item.images.isEmpty { ImageStrip(images: item.images) }
+					if !item.text.isEmpty {
+						Text(item.text)
+							.textSelection(.enabled)
+							.padding(10)
+							.background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+					}
+				}
+				.frame(maxWidth: .infinity, alignment: .trailing)
 			case .assistant:
 				VStack(alignment: .leading, spacing: 8) {
 					ForEach(Bubble.segments(item.text)) { s in
@@ -230,6 +314,7 @@ struct ToolRow: View {
 				.foregroundStyle(item.failed ? Color.orange : Color.secondary)
 			}
 			.buttonStyle(.plain)
+			if !item.images.isEmpty { ImageStrip(images: item.images, height: 220) }
 			if open, let d = item.detail {
 				ScrollView {
 					Text(d)
@@ -356,5 +441,40 @@ struct ChangeDiffView: View {
 			}
 		}
 		.errorAlert($error)
+	}
+}
+
+/// Картинки сообщения (фото пользователя, скриншоты агента); нажатие — во весь экран.
+struct ImageStrip: View {
+	let images: [Data]
+	var height: CGFloat = 120
+	@State private var full: FullImage?
+
+	struct FullImage: Identifiable {
+		let id = UUID()
+		let image: UIImage
+	}
+
+	var body: some View {
+		ScrollView(.horizontal, showsIndicators: false) {
+			HStack(spacing: 6) {
+				ForEach(Array(images.enumerated()), id: \.offset) { _, d in
+					if let img = UIImage(data: d) {
+						Image(uiImage: img).resizable().scaledToFit()
+							.frame(height: height)
+							.clipShape(RoundedRectangle(cornerRadius: 10))
+							.onTapGesture { full = FullImage(image: img) }
+					}
+				}
+			}
+		}
+		.fullScreenCover(item: $full) { f in
+			ZStack(alignment: .topTrailing) {
+				Color.black.ignoresSafeArea()
+				Image(uiImage: f.image).resizable().scaledToFit()
+				Button { full = nil } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle).symbolRenderingMode(.hierarchical) }
+					.padding()
+			}
+		}
 	}
 }

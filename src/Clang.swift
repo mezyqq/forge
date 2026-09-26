@@ -15,7 +15,7 @@ enum Clang {
 	/// Можно ли запускать нативный код прямо в Forge: есть компилятор и включён JIT.
 	static var canJIT: Bool {
 		#if FORGE_COMPILER
-		return IpaBuilder.available && ioscc_jit_enabled() != 0
+		return IpaBuilder.available && JIT.available
 		#else
 		return false
 		#endif
@@ -193,6 +193,18 @@ enum Clang {
 		#endif
 	}
 
+	/// Сборка src/ и загрузка в память — для перезагрузки превью (вывод clang идёт в stderr Forge).
+	static func loadProject(_ proj: URL) throws -> OpaquePointer {
+		#if FORGE_COMPILER
+		guard canJIT else { throw IpaBuilder.Failure(message: L("JIT is not enabled.")) }
+		let (objects, frameworks) = try IpaBuilder.jitObjects(proj)
+		guard let jit = load(objects, frameworks: frameworks) else { throw IpaBuilder.Failure(message: L("Linking in memory failed — see the log.")) }
+		return jit
+		#else
+		throw IpaBuilder.Failure(message: L("this Forge build has no compiler"))
+		#endif
+	}
+
 	/// Вызов forge_preview() на главном потоке; ошибка — nil и сообщение.
 	static func previewController(_ jit: OpaquePointer) -> Result<UIViewController, IpaBuilder.Failure> {
 		#if FORGE_COMPILER
@@ -217,7 +229,7 @@ enum Clang {
 
 	#if FORGE_COMPILER
 	private static func load(_ objects: [String], frameworks: [String]) -> OpaquePointer? {
-		guard ioscc_jit_enabled() != 0 else {
+		guard JIT.available else {
 			fputs(L("JIT is not enabled. Launch Forge with JIT (the same way you enable it for other apps) to run code without installing.") + "\n", stderr)
 			return nil
 		}
@@ -259,4 +271,26 @@ enum Clang {
 			t.start()
 		}
 	}
+}
+
+/// Включён ли JIT и каким способом. Проверяется каждый раз заново: JIT могут включить,
+/// пока Forge уже работает (например, Lara).
+enum JIT {
+	enum Status {
+		case debugger  // CS_DEBUGGED: StikDebug, SideStore, LiveContainer, отладчик
+		case memory    // флага нет, но память под код выдаётся (Lara и подобные)
+		case forced    // пользователь сказал «включён» в настройках
+		case off
+	}
+
+	static let forceKey = "jitForce"
+
+	static var status: Status {
+		if forge_jit_debugged() != 0 { return .debugger }
+		if forge_jit_probe() != 0 { return .memory }
+		if UserDefaults.standard.bool(forKey: forceKey) { return .forced }
+		return .off
+	}
+
+	static var available: Bool { status != .off }
 }

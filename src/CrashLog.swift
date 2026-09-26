@@ -10,7 +10,7 @@ enum CrashLog {
 		return d
 	}()
 	private static var latest: URL { dir.appendingPathComponent("crash-latest.txt") }
-	private static var stderrLog: URL { dir.appendingPathComponent("stderr.txt") }
+	static var stderrLog: URL { dir.appendingPathComponent("stderr.txt") }
 
 	/// Отчёт о вылете прошлого запуска (показать при старте).
 	private(set) static var pending: URL?

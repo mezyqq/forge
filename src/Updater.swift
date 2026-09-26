@@ -15,15 +15,18 @@ final class Updater: ObservableObject {
 	static let shared = Updater()
 	static let repo = "mezyqq/forge"
 
-	struct Release: Equatable {
+	struct Release: Equatable, Identifiable {
 		let version: String
 		let notes: String
 		let ipa: URL
 		let size: Int
+		var date: Date? = nil
+		var id: String { version }
 	}
 
 	enum State: Equatable {
 		case idle, checking, upToDate
+		case saving                // снимок данных перед сменой версии
 		case available(Release)
 		case downloading(Double)
 		case installing(Double)
@@ -34,7 +37,7 @@ final class Updater: ObservableObject {
 
 	@Published private(set) var state = State.idle
 
-	static var current: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0" }
+	nonisolated static var current: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0" }
 
 	private static var workDir: URL { FileManager.default.temporaryDirectory.appendingPathComponent("forge-update") }
 
@@ -56,24 +59,21 @@ final class Updater: ObservableObject {
 			      let j = try JSONSerialization.jsonObject(with: d) as? [String: Any] else {
 				throw Unzip.Failure(message: L("GitHub did not answer (HTTP %@)", (r as? HTTPURLResponse)?.statusCode ?? 0))
 			}
-			let tag = (j["tag_name"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-			let assets = j["assets"] as? [[String: Any]] ?? []
-			guard let a = assets.first(where: { ($0["name"] as? String ?? "").hasSuffix(".ipa") }),
-			      let s = a["browser_download_url"] as? String, let u = URL(string: s) else {
-				throw Unzip.Failure(message: L("The latest release has no .ipa"))
-			}
-			let rel = Release(version: tag, notes: Updater.localizedNotes(j["body"] as? String ?? ""), ipa: u, size: a["size"] as? Int ?? 0)
-			state = Updater.newer(tag, than: Updater.current) ? .available(rel) : .upToDate
+			guard let rel = Updater.release(j) else { throw Unzip.Failure(message: L("The latest release has no .ipa")) }
+			state = Updater.newer(rel.version, than: Updater.current) ? .available(rel) : .upToDate
 		} catch {
 			state = .failed(error.localizedDescription)
 		}
 	}
 
 	func install(_ rel: Release) async {
-		state = .downloading(0)
-		CrashLog.crumb("обновление до \(rel.version)")
+		CrashLog.crumb("смена версии на \(rel.version)")
 		let fm = FileManager.default
 		do {
+			// сначала — снимок данных этой версии: к ним можно будет вернуться
+			state = .saving
+			try await Snapshots.take(reason: "leave")
+			state = .downloading(0)
 			let work = Updater.workDir
 			try? fm.removeItem(at: work)
 			try fm.createDirectory(at: work, withIntermediateDirectories: true)
@@ -116,6 +116,28 @@ final class Updater: ObservableObject {
 
 	// MARK: -
 
+	/// Все релизы (для отката на прошлую версию), новые сверху.
+	func releases() async throws -> [Release] {
+		var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(Updater.repo)/releases?per_page=30")!)
+		req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+		req.timeoutInterval = 20
+		let (d, r) = try await URLSession.shared.data(for: req)
+		guard (r as? HTTPURLResponse)?.statusCode == 200, let arr = try JSONSerialization.jsonObject(with: d) as? [[String: Any]] else {
+			throw Unzip.Failure(message: L("GitHub did not answer (HTTP %@)", (r as? HTTPURLResponse)?.statusCode ?? 0))
+		}
+		return arr.compactMap(Updater.release).sorted { Updater.newer($0.version, than: $1.version) }
+	}
+
+	/// Релиз GitHub → версия и .ipa (nil, если .ipa нет).
+	private static func release(_ j: [String: Any]) -> Release? {
+		let tag = (j["tag_name"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+		let assets = j["assets"] as? [[String: Any]] ?? []
+		guard let a = assets.first(where: { ($0["name"] as? String ?? "").hasSuffix(".ipa") }),
+		      let s = a["browser_download_url"] as? String, let u = URL(string: s) else { return nil }
+		let date = (j["published_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+		return Release(version: tag, notes: localizedNotes(j["body"] as? String ?? ""), ipa: u, size: a["size"] as? Int ?? 0, date: date)
+	}
+
 	/// Описание релиза: до «### Русский» — английское, после — русское (как в релизах Forge).
 	private static func localizedNotes(_ body: String) -> String {
 		let parts = body.components(separatedBy: "### Русский")
@@ -128,7 +150,7 @@ final class Updater: ObservableObject {
 	}
 
 	/// 0.10 > 0.9: сравниваем числа по частям.
-	static func newer(_ a: String, than b: String) -> Bool {
+	nonisolated static func newer(_ a: String, than b: String) -> Bool {
 		let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
 		for i in 0..<max(x.count, y.count) {
 			let p = i < x.count ? x[i] : 0, q = i < y.count ? y[i] : 0
@@ -168,6 +190,8 @@ struct UpdateSection: View {
 				if case .failed(let m) = u.state { Text(m).font(.footnote).foregroundStyle(.red) }
 			case .checking:
 				HStack { ProgressView(); Text(L("Checking…")).foregroundStyle(.secondary) }
+			case .saving:
+				HStack { ProgressView(); Text(L("Saving your data to a snapshot…")).foregroundStyle(.secondary) }
 			case .available(let r):
 				Button { Task { await u.install(r) } } label: {
 					Label(L("Update to %@", r.version) + (r.size > 0 ? " (\(ByteCountFormatter.string(fromByteCount: Int64(r.size), countStyle: .file)))" : ""),
@@ -198,10 +222,141 @@ struct UpdateSection: View {
 				Text(L("Forge is not running inside LiveContainer, so it cannot replace itself. Install this .ipa over the current app with your installer — data is kept when the bundle ID is the same."))
 					.font(.footnote).foregroundStyle(.secondary)
 			}
+			NavigationLink { VersionsView() } label: { Label(L("Other versions (roll back)"), systemImage: "clock.arrow.circlepath") }
+			NavigationLink { SnapshotsView() } label: { Label(L("Data snapshots"), systemImage: "archivebox") }
 		} header: {
 			Text(L("Updates"))
 		}
 		.sheet(item: $share) { ShareSheet(url: $0.url) }
-		.task { if case .idle = u.state { await u.check() } }
+		.task { if Feature.on(Feature.autoUpdate), case .idle = u.state { await u.check() } }
+	}
+}
+
+/// Все версии Forge из GitHub Releases: установка любой, в том числе откат на прошлую.
+struct VersionsView: View {
+	@ObservedObject private var u = Updater.shared
+	@Environment(\.dismiss) private var dismiss
+	@State private var releases: [Updater.Release] = []
+	@State private var loading = true
+	@State private var error: String?
+	@State private var confirm: Updater.Release?
+
+	var body: some View {
+		List {
+			Section {
+				ForEach(releases) { r in
+					Button { confirm = r } label: {
+						HStack {
+							VStack(alignment: .leading, spacing: 2) {
+								Text("Forge \(r.version)").foregroundStyle(.primary)
+								if let d = r.date { Text(d.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }
+							}
+							Spacer()
+							Text(label(r)).font(.caption).foregroundStyle(r.version == Updater.current ? Color.green : Color.secondary)
+						}
+					}
+					.disabled(r.version == Updater.current)
+				}
+			} footer: {
+				Text(L("Before switching, Forge packs your projects and settings into a compressed snapshot. Nothing is deleted: when you come back to a newer version, Forge offers to restore the data you had in it. AI keys and the GitHub account stay as they are."))
+			}
+		}
+		.overlay { if loading { ProgressView() } }
+		.navigationTitle(L("Versions"))
+		.navigationBarTitleDisplayMode(.inline)
+		.errorAlert($error)
+		.confirmationDialog(confirm.map { L(Updater.newer($0.version, than: Updater.current) ? "Update to %@?" : "Roll back to %@?", $0.version) } ?? "",
+		                    isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+		                    titleVisibility: .visible) {
+			Button(L("Install")) {
+				if let r = confirm {
+					Task { await u.install(r) }
+					dismiss()
+				}
+			}
+		} message: {
+			Text(L("Your data is saved to a snapshot first."))
+		}
+		.task {
+			do { releases = try await u.releases() } catch { self.error = error.localizedDescription }
+			loading = false
+		}
+	}
+
+	private func label(_ r: Updater.Release) -> String {
+		if r.version == Updater.current { return L("installed") }
+		return Updater.newer(r.version, than: Updater.current) ? L("newer") : L("older")
+	}
+}
+
+/// Снимки данных: восстановить, поделиться (резервная копия), удалить, сделать сейчас.
+struct SnapshotsView: View {
+	@EnvironmentObject var store: ProjectStore
+	@State private var list: [Snapshots.Info] = []
+	@State private var busy = false
+	@State private var error: String?
+	@State private var confirm: Snapshots.Info?
+	@State private var share: ShareItem?
+	@State private var done: String?
+
+	var body: some View {
+		List {
+			Section {
+				Button { run { try await Snapshots.take(reason: "manual") } } label: {
+					Label(L("Save a snapshot now"), systemImage: "plus.circle")
+				}
+				.disabled(busy)
+			}
+			Section {
+				ForEach(list) { s in
+					Button { confirm = s } label: {
+						VStack(alignment: .leading, spacing: 2) {
+							Text("Forge \(s.version) · \(Snapshots.reasonText(s.reason))").foregroundStyle(.primary)
+							Text("\(s.date.formatted(date: .abbreviated, time: .shortened)) · \(ByteCountFormatter.string(fromByteCount: Int64(s.size), countStyle: .file))")
+								.font(.caption).foregroundStyle(.secondary)
+						}
+					}
+					.disabled(busy)
+					.swipeActions {
+						Button(role: .destructive) { Snapshots.delete(s); reload() } label: { Label(L("Delete"), systemImage: "trash") }
+						Button { share = ShareItem(url: s.url) } label: { Label(L("Share"), systemImage: "square.and.arrow.up") }
+					}
+				}
+			} footer: {
+				Text(L("Projects (without build/) and settings, compressed with LZMA. The last %@ snapshots are kept.", Snapshots.keep))
+			}
+		}
+		.overlay { if busy { ProgressView() } else if list.isEmpty { Text(L("No snapshots yet")).foregroundStyle(.secondary) } }
+		.navigationTitle(L("Data snapshots"))
+		.navigationBarTitleDisplayMode(.inline)
+		.errorAlert($error)
+		.sheet(item: $share) { ShareSheet(url: $0.url) }
+		.alert(done ?? "", isPresented: Binding(get: { done != nil }, set: { if !$0 { done = nil } })) { Button("OK") {} }
+		.confirmationDialog(L("Restore this snapshot?"), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+		                    titleVisibility: .visible) {
+			Button(L("Restore"), role: .destructive) {
+				if let s = confirm {
+					run {
+						try await Snapshots.restore(s)
+						store.reload()
+						done = L("Restored. The current data was saved to a snapshot first.")
+					}
+				}
+			}
+		} message: {
+			Text(L("Projects and settings will be replaced with the snapshot. The current state is saved to a new snapshot first."))
+		}
+		.onAppear(perform: reload)
+	}
+
+	private func reload() { list = Snapshots.list() }
+
+	private func run(_ body: @escaping () async throws -> Void) {
+		busy = true
+		Task {
+			do { try await body() } catch { self.error = error.localizedDescription }
+			busy = false
+			reload()
+		}
 	}
 }

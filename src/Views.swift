@@ -54,6 +54,10 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 struct ProjectsView: View {
 	@EnvironmentObject var store: ProjectStore
+	@ObservedObject private var updater = Updater.shared
+	@State private var checkedUpdates = false
+	@State private var restoreOffer: Snapshots.Info?
+	@State private var restoring = false
 	@State private var showNew = false
 	@State private var showClone = false
 	@State private var showSettings = false
@@ -92,7 +96,13 @@ struct ProjectsView: View {
 			.navigationDestination(for: Project.self) { ProjectView(project: $0) }
 			.toolbar {
 				ToolbarItem(placement: .navigationBarLeading) {
-					Button { showSettings = true } label: { Image(systemName: "gearshape") }
+					Button { showSettings = true } label: {
+						Image(systemName: "gearshape")
+							.overlay(alignment: .topTrailing) {
+								// есть обновление — точка на шестерёнке
+								if case .available = updater.state { Circle().fill(.red).frame(width: 8, height: 8).offset(x: 3, y: -3) }
+							}
+					}
 				}
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
 					Button { showClone = true } label: { Image(systemName: "square.and.arrow.down.on.square") }
@@ -102,6 +112,31 @@ struct ProjectsView: View {
 			.sheet(isPresented: $showNew) { NewProjectView() }
 			.sheet(isPresented: $showClone) { CloneView() }
 			.sheet(isPresented: $showSettings) { SettingsView() }
+			.onAppear {
+				if let s = Snapshots.pendingRestore { Snapshots.pendingRestore = nil; restoreOffer = s }
+			}
+			.alert(L("Restore your Forge %@ data?", restoreOffer?.version ?? ""),
+			       isPresented: Binding(get: { restoreOffer != nil }, set: { if !$0 { restoreOffer = nil } })) {
+				Button(L("Restore")) {
+					guard let s = restoreOffer else { return }
+					restoring = true
+					Task {
+						do { try await Snapshots.restore(s) } catch { self.error = error.localizedDescription }
+						store.reload()
+						restoring = false
+					}
+				}
+				Button(L("Keep current"), role: .cancel) {}
+			} message: {
+				Text(L("You are back on a newer version. Forge saved your projects and settings when you left it (%@). Restore them? The current state is saved to a snapshot first.",
+				       restoreOffer?.date.formatted(date: .abbreviated, time: .shortened) ?? ""))
+			}
+			.overlay { if restoring { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+			.task {
+				guard !checkedUpdates, Feature.on(Feature.autoUpdate) else { return }
+				checkedUpdates = true
+				await updater.check()
+			}
 			.confirmationDialog(L("Delete project “%@” with all its files?", toDelete?.name ?? ""),
 			                    isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
 			                    titleVisibility: .visible) {
@@ -184,6 +219,8 @@ struct SettingsView: View {
 		NavigationStack {
 			Form {
 				UpdateSection()
+				FeaturesSection()
+				if IpaBuilder.available { JITSection() }
 				Section(L("Language")) {
 					Picker(L("Language"), selection: $language) {
 						ForEach(L10n.languages, id: \.id) { Text($0.title).tag($0.id) }

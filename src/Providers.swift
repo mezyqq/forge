@@ -167,6 +167,13 @@ enum LLM {
 		var stop: String   // end_turn | tool_use | max_tokens | refusal
 	}
 
+	/// Картинка Anthropic (base64) → часть сообщения OpenAI (data URL).
+	static func imageURLPart(_ b: [String: Any]) -> [String: Any]? {
+		guard b["type"] as? String == "image", let s = b["source"] as? [String: Any], let d = s["data"] as? String else { return nil }
+		let mt = s["media_type"] as? String ?? "image/jpeg"
+		return ["type": "image_url", "image_url": ["url": "data:\(mt);base64,\(d)"]]
+	}
+
 	static func url(_ base: String, _ path: String) throws -> URL {
 		var b = base.trimmingCharacters(in: .whitespacesAndNewlines)
 		while b.hasSuffix("/") { b.removeLast() }
@@ -352,14 +359,32 @@ enum LLM {
 				if !calls.isEmpty { a["tool_calls"] = calls }
 				msgs.append(a)
 			} else {
+				// текст и картинки пользователя — одним сообщением; картинки из tool_result (screenshot) —
+				// отдельным сообщением user после ответов инструментов: в role tool картинки нельзя
+				var parts: [[String: Any]] = [], toolImages: [[String: Any]] = []
 				for b in blocks {
 					switch b["type"] as? String {
 					case "tool_result":
-						msgs.append(["role": "tool", "tool_call_id": b["tool_use_id"] ?? "", "content": b["content"] as? String ?? ""])
+						var text = b["content"] as? String ?? ""
+						if let arr = b["content"] as? [[String: Any]] {
+							text = arr.compactMap { $0["text"] as? String }.joined(separator: "\n")
+							toolImages += arr.compactMap(LLM.imageURLPart)
+						}
+						msgs.append(["role": "tool", "tool_call_id": b["tool_use_id"] ?? "", "content": text])
 					case "text":
-						msgs.append(["role": "user", "content": b["text"] as? String ?? ""])
+						parts.append(["type": "text", "text": b["text"] as? String ?? ""])
+					case "image":
+						if let p = LLM.imageURLPart(b) { parts.append(p) }
 					default: break
 					}
+				}
+				if !toolImages.isEmpty {
+					msgs.append(["role": "user", "content": [["type": "text", "text": "Screenshot returned by the tool:"]] + toolImages])
+				}
+				if parts.count == 1, let t = parts[0]["text"] as? String {
+					msgs.append(["role": "user", "content": t])
+				} else if !parts.isEmpty {
+					msgs.append(["role": "user", "content": parts])
 				}
 			}
 		}

@@ -3,3 +3,6 @@
 	<key>NSAppTransportSecurity</key>
 	<dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 	<key>NSLocalNetworkUsageDescription</key><string>Для подключения к ИИ-модели на компьютере в твоей сети (Ollama, LM Studio).</string>
+	<key>NSMicrophoneUsageDescription</key><string>Voice input in the AI chat (Settings → Features).</string>
+	<key>NSSpeechRecognitionUsageDescription</key><string>Turns your voice into text in the AI chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key><string>Attach pictures to the AI chat.</string>

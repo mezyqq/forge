@@ -34,7 +34,16 @@ final class ToolBox {
 		 "input_schema": ["type": "object", "properties": props, "required": required]]
 	}
 
-	static let definitions: [[String: Any]] = [
+	/// Инструменты для модели; screenshot — только когда включён в Настройки → Функции.
+	static var definitions: [[String: Any]] { Feature.on(Feature.agentScreenshot) ? base + [screenshotTool] : base }
+
+	static let screenshotTool = tool("screenshot", """
+	Takes a screenshot of the app preview that is open in Forge (the forge_preview() screen shown by ⋯ → Run in Forge)
+	and returns it as an image. If live reload is on, waits for the rebuild after your latest edits first.
+	Use it to check the UI after changes: layout, colors, text. If no preview is open, ask the user to open it.
+	""", [:], [])
+
+	private static let base: [[String: Any]] = [
 		tool("read", """
 		Read a file or directory of the project. Paths are relative to the project root.
 		- By default returns up to 2000 lines from the start of the file; use offset (1-indexed line) and limit to read other parts.
@@ -117,7 +126,7 @@ final class ToolBox {
 		      "format": ["type": "string", "enum": ["text", "html"], "description": "text (default) or raw html"]], ["url"]),
 	]
 
-	static let names: [String] = definitions.compactMap { $0["name"] as? String }
+	static let names: [String] = (base + [screenshotTool]).compactMap { $0["name"] as? String }
 
 	/// Модели часто зовут Read/read_file/str_replace — приводим к нашим именам.
 	static func canonical(_ name: String) -> String? {
@@ -131,7 +140,7 @@ final class ToolBox {
 			"find": "glob", "find_files": "glob", "search": "grep", "search_files": "grep", "ripgrep": "grep",
 			"rename": "move", "mv": "move", "remove": "delete", "rm": "delete", "delete_file": "delete",
 			"run_file": "run", "execute": "run", "exec": "run", "build_app": "build", "compile": "build", "make": "build", "build_ipa": "build", "todo": "todowrite", "todo_write": "todowrite",
-			"fetch": "webfetch", "web_fetch": "webfetch",
+			"fetch": "webfetch", "web_fetch": "webfetch", "take_screenshot": "screenshot", "screen": "screenshot",
 		]
 		return aliases[n]
 	}
@@ -142,6 +151,7 @@ final class ToolBox {
 		var output: String
 		var isError: Bool
 		var summary: String   // для строки в чате
+		var image: Data? = nil  // JPEG для модели (screenshot)
 	}
 
 	private struct ArgError: Error { let message: String }
@@ -155,6 +165,7 @@ final class ToolBox {
 			return Result(output: "The arguments for \(name) were not valid JSON: \(raw.prefix(300)). Call the tool again with a proper JSON object.",
 			              isError: true, summary: L("%@: invalid arguments", name))
 		}
+		if name == "screenshot" { return await screenshot() }
 		do {
 			let r = try await execute(name, input)
 			return Result(output: ToolBox.truncate(r.0), isError: false, summary: r.1)
@@ -430,6 +441,30 @@ final class ToolBox {
 		default:
 			throw StoreError("unknown tool \(name)")
 		}
+	}
+
+	/// Снимок открытого превью. При живой перезагрузке сначала ждём пересборку после последних правок.
+	private func screenshot() async -> Result {
+		guard Feature.on(Feature.agentScreenshot) else {
+			return Result(output: "Screenshots are turned off by the user (Settings → Features).", isError: true, summary: L("screenshot: turned off"))
+		}
+		let host = PreviewHost.shared
+		guard host.isOpen else {
+			return Result(output: "No preview is open. Ask the user to open ⋯ → Run in Forge (the app needs a UIViewController *forge_preview(void) function).",
+			              isError: true, summary: L("screenshot: no preview open"))
+		}
+		if Feature.on(Feature.hotReload) {
+			try? await Task.sleep(nanoseconds: 900_000_000)  // таймер замечает сохранённые правки
+			var waited = 0
+			while host.reloading, waited < 120 { try? await Task.sleep(nanoseconds: 250_000_000); waited += 1 }
+		}
+		try? await Task.sleep(nanoseconds: 300_000_000)  // дать экрану отрисоваться
+		guard let jpeg = host.screenshot() else {
+			return Result(output: "Could not capture the preview.", isError: true, summary: L("screenshot failed"))
+		}
+		var text = "Screenshot of the open preview."
+		if let e = host.reloadError { text += "\nThe last rebuild FAILED, so this is the previous version of the screen:\n\(e)" }
+		return Result(output: text, isError: false, summary: L("taking a screenshot of the preview"), image: jpeg)
 	}
 
 	// MARK: помощники

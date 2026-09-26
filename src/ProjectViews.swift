@@ -151,7 +151,9 @@ struct FilesView: View {
 		if n.isDir {
 			Label(n.name, systemImage: "folder.fill").foregroundStyle(.primary)
 		} else {
-			NavigationLink { EditorScreen(project: project, path: n.path) } label: {
+			NavigationLink {
+				if EditorTabs.enabled { TabbedEditor(project: project, path: n.path) } else { EditorScreen(project: project, path: n.path) }
+			} label: {
 				Label(n.name, systemImage: icon(n.path)).font(.system(.body, design: .monospaced))
 			}
 		}
@@ -500,4 +502,78 @@ struct SearchView: View {
 
 extension Array {
 	subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+// MARK: вкладки (iPad)
+
+/// Открытые файлы проекта — вкладки над редактором на iPad.
+@MainActor
+final class EditorTabs: ObservableObject {
+	static let shared = EditorTabs()
+	@Published private(set) var open: [URL: [String]] = [:]
+
+	static var enabled: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+	func add(_ path: String, in p: Project) {
+		var list = open[p.url] ?? []
+		if !list.contains(path) { list.append(path) }
+		open[p.url] = list
+	}
+
+	func close(_ path: String, in p: Project) {
+		open[p.url]?.removeAll { $0 == path }
+	}
+}
+
+struct TabbedEditor: View {
+	let project: Project
+	@State var path: String
+	@ObservedObject private var tabs = EditorTabs.shared
+	@Environment(\.dismiss) private var dismiss
+
+	var body: some View {
+		VStack(spacing: 0) {
+			ScrollView(.horizontal, showsIndicators: false) {
+				HStack(spacing: 4) {
+					ForEach(tabs.open[project.url] ?? [], id: \.self) { p in tab(p) }
+				}
+				.padding(.horizontal, 8)
+				.padding(.vertical, 4)
+			}
+			.background(Color(.secondarySystemBackground))
+			Divider()
+			EditorScreen(project: project, path: path).id(path)
+		}
+		.onAppear { tabs.add(path, in: project) }
+	}
+
+	private func tab(_ p: String) -> some View {
+		HStack(spacing: 6) {
+			Text((p as NSString).lastPathComponent)
+				.font(.footnote.monospaced())
+				.lineLimit(1)
+			Button { close(p) } label: { Image(systemName: "xmark").font(.caption2.bold()) }
+				.buttonStyle(.plain)
+				.foregroundStyle(.secondary)
+		}
+		.padding(.horizontal, 10)
+		.padding(.vertical, 6)
+		.background(p == path ? Color(.systemBackground) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+		.contentShape(Rectangle())
+		.onTapGesture { path = p }
+		.contextMenu {
+			Button { for o in (tabs.open[project.url] ?? []) where o != p { tabs.close(o, in: project) } } label: {
+				Label(L("Close other tabs"), systemImage: "xmark.square")
+			}
+		}
+	}
+
+	private func close(_ p: String) {
+		let list = tabs.open[project.url] ?? []
+		let i = list.firstIndex(of: p) ?? 0
+		tabs.close(p, in: project)
+		guard p == path else { return }
+		let rest = tabs.open[project.url] ?? []
+		if rest.isEmpty { dismiss() } else { path = rest[min(i, rest.count - 1)] }
+	}
 }

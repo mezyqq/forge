@@ -7,11 +7,13 @@ struct ChatItem: Identifiable {
 	let text: String
 	var detail: String? = nil   // вывод инструмента (раскрывается по нажатию)
 	var failed = false
-	init(_ kind: Kind, _ text: String, detail: String? = nil, failed: Bool = false) {
+	var images: [Data] = []    // JPEG: фото пользователя, скриншоты агента
+	init(_ kind: Kind, _ text: String, detail: String? = nil, failed: Bool = false, images: [Data] = []) {
 		self.kind = kind
 		self.text = text
 		self.detail = detail
 		self.failed = failed
+		self.images = images
 	}
 }
 
@@ -46,10 +48,14 @@ final class Agent: ObservableObject {
 		load()
 	}
 
-	func send(_ text: String) {
+	func send(_ text: String, images: [Data] = []) {
 		guard !busy else { return }
-		items.append(.init(.user, text))
-		messages.append(["role": "user", "content": text])
+		items.append(.init(.user, text, images: images))
+		if images.isEmpty {
+			messages.append(["role": "user", "content": text])
+		} else {
+			messages.append(["role": "user", "content": images.map(Agent.imageBlock) + [["type": "text", "text": text.isEmpty ? "(see the image)" : text]]])
+		}
 		start()
 	}
 
@@ -70,6 +76,11 @@ final class Agent: ObservableObject {
 		changed = []
 		system = nil
 		try? FileManager.default.removeItem(at: chatURL)
+	}
+
+	/// Картинка в формате Anthropic (история хранится в нём; для OpenAI конвертируется в Providers).
+	static func imageBlock(_ jpeg: Data) -> [String: Any] {
+		["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": jpeg.base64EncodedString()]]
 	}
 
 	// MARK: просмотр правок
@@ -202,10 +213,11 @@ final class Agent: ObservableObject {
 								res = await toolbox.run(name, input)
 							}
 						}
-						items.append(.init(.tool, res.summary, detail: String(res.output.prefix(6000)), failed: res.isError))
+						items.append(.init(.tool, res.summary, detail: String(res.output.prefix(6000)), failed: res.isError, images: res.image.map { [$0] } ?? []))
 						if ToolBox.canonical(name) == "todowrite" { todos = toolbox.todos }
 						changed = toolbox.originals.keys.sorted()
-						results.append(["type": "tool_result", "tool_use_id": id, "content": res.output, "is_error": res.isError])
+						let content: Any = res.image.map { [["type": "text", "text": res.output], Agent.imageBlock($0)] } ?? res.output
+						results.append(["type": "tool_result", "tool_use_id": id, "content": content, "is_error": res.isError])
 					default: break
 					}
 				}
@@ -263,6 +275,7 @@ final class Agent: ObservableObject {
 			var d: [String: Any] = ["kind": i.kind.rawValue, "text": i.text]
 			if let det = i.detail { d["detail"] = det }
 			if i.failed { d["failed"] = true }
+			if !i.images.isEmpty { d["images"] = i.images.map { $0.base64EncodedString() } }
 			return d
 		}
 		var j: [String: Any] = ["messages": messages, "items": its,
@@ -277,7 +290,8 @@ final class Agent: ObservableObject {
 		messages = j["messages"] as? [[String: Any]] ?? []
 		items = (j["items"] as? [[String: Any]] ?? []).compactMap { i in
 			guard let k = ChatItem.Kind(rawValue: i["kind"] as? String ?? ""), let t = i["text"] as? String else { return nil }
-			return ChatItem(k, t, detail: i["detail"] as? String, failed: i["failed"] as? Bool ?? false)
+			return ChatItem(k, t, detail: i["detail"] as? String, failed: i["failed"] as? Bool ?? false,
+			                images: (i["images"] as? [String] ?? []).compactMap { Data(base64Encoded: $0) })
 		}
 		todos = (j["todos"] as? [[String: String]] ?? []).map {
 			Todo(id: $0["id"] ?? UUID().uuidString, content: $0["content"] ?? "", status: $0["status"] ?? "pending")
