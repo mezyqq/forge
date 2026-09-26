@@ -83,7 +83,9 @@ enum IpaBuilder {
 		let modCache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("forge-clang-modules").path
 		let minIOS = cfg?.value("MIN_IOS", "15.0") ?? "16.0"
 		return ["-target", "arm64-apple-ios\(minIOS)", "-isysroot", sdkPath, optimize,
-		        "-fmodules", "-fmodules-cache-path=\(modCache)", "-I\(proj.appendingPathComponent("src").path)"] + (cfg?.words("CFLAGS") ?? [])
+		        "-fmodules", "-fmodules-cache-path=\(modCache)", "-I\(proj.appendingPathComponent("src").path)",
+		        // библиотеки из менеджера пакетов: #include "cJSON.h"
+		        "-I\(proj.appendingPathComponent("src/vendor").path)", "-I\(proj.appendingPathComponent("vendor").path)"] + (cfg?.words("CFLAGS") ?? [])
 	}
 
 	/// Язык по расширению; заголовки — как ObjC (или ObjC++ для .hpp).

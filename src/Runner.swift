@@ -133,6 +133,9 @@ final class Runner: ObservableObject {
 		guard !running, let kind = RunKind.detect(url.path), kind != .web else { return }
 		CrashLog.crumb("запуск скрипта: \(url.lastPathComponent)")
 		let path = url.path, dir = url.deletingLastPathComponent().path
+		// пакеты проекта (менеджер пакетов): py_modules/ и lua_modules/
+		let mp = PackageManager.modulePaths(PackageManager.projectRoot(of: url))
+		forge_set_module_paths(mp.python, mp.lua)
 		launch(title: url.lastPathComponent, dir: dir, interactive: interactive, body: {
 			switch kind {
 			case .python: return forge_run_python(path)
@@ -219,6 +222,36 @@ final class Runner: ObservableObject {
 enum JSRunner {
 	static var stop = false
 
+	/// Файл или папка → конкретный .js/.json: как в Node (x, x.js, x.json, x/package.json main, x/index.js).
+	static func resolveFile(_ p: String) -> String {
+		let fm = FileManager.default
+		var isDir: ObjCBool = false
+		if fm.fileExists(atPath: p, isDirectory: &isDir), !isDir.boolValue { return p }
+		for ext in [".js", ".json", ".cjs"] where fm.fileExists(atPath: p + ext) { return p + ext }
+		if isDir.boolValue {
+			if let d = fm.contents(atPath: p + "/package.json"),
+			   let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let main = j["main"] as? String, !main.isEmpty {
+				let m = ((p as NSString).appendingPathComponent(main) as NSString).standardizingPath
+				if m != p { return resolveFile(m) }
+			}
+			for i in ["/index.js", "/index.json", "/index.cjs"] where fm.fileExists(atPath: p + i) { return p + i }
+		}
+		return p
+	}
+
+	/// Путь к пакету name в ближайшей node_modules выше dir (или nil).
+	static func nodeModule(_ name: String, from dir: String) -> String? {
+		var d = (dir as NSString).standardizingPath
+		while true {
+			let c = (d as NSString).appendingPathComponent("node_modules/" + name)
+			let top = (d as NSString).appendingPathComponent("node_modules/" + name.split(separator: "/").prefix(name.hasPrefix("@") ? 2 : 1).joined(separator: "/"))
+			if FileManager.default.fileExists(atPath: top) { return c }
+			let up = (d as NSString).deletingLastPathComponent
+			if up == d || up.isEmpty { return nil }
+			d = up
+		}
+	}
+
 	static func run(path: String, dir: String) -> Int32 {
 		stop = false
 		guard let ctx = JSContext(), let src = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -259,13 +292,11 @@ enum JSRunner {
 		var modules: [String: JSValue] = [:]
 		func makeRequire(_ base: String) -> JSValue {
 			let fn: @convention(block) (String) -> JSValue? = { name in
-				let fm = FileManager.default
+				let local = name.hasPrefix("/") || name.hasPrefix(".")
 				var p = ((name.hasPrefix("/") ? name : (base as NSString).appendingPathComponent(name)) as NSString).standardizingPath
-				var isDir: ObjCBool = false
-				if !fm.fileExists(atPath: p, isDirectory: &isDir) || isDir.boolValue {
-					if fm.fileExists(atPath: p + ".js") { p += ".js" }
-					else if fm.fileExists(atPath: p + "/index.js") { p += "/index.js" }
-				}
+				// «lodash», «@scope/pkg/sub» — пакет из node_modules (ищем вверх от папки файла, как Node)
+				if !local, let m = JSRunner.nodeModule(name, from: base) { p = m }
+				p = JSRunner.resolveFile(p)
 				if let m = modules[p] { return m.objectForKeyedSubscript("exports") }
 				guard let code = try? String(contentsOfFile: p, encoding: .utf8) else {
 					ctx.exception = JSValue(newErrorFromMessage: "Cannot find module '\(name)'", in: ctx)
@@ -277,16 +308,18 @@ enum JSRunner {
 				if p.hasSuffix(".json") {
 					module.setObject(json?.invokeMethod("parse", withArguments: [code]), forKeyedSubscript: "exports" as NSString)
 				} else {
-					let wrapper = ctx.evaluateScript("(function(module, exports, require){\n" + code + "\n})",
+					let wrapper = ctx.evaluateScript("(function(module, exports, require, __filename, __dirname){\n" + code + "\n})",
 					                                 withSourceURL: URL(fileURLWithPath: p))
 					_ = wrapper?.call(withArguments: [module, module.objectForKeyedSubscript("exports")!,
-					                                  makeRequire((p as NSString).deletingLastPathComponent)])
+					                                  makeRequire((p as NSString).deletingLastPathComponent), p, (p as NSString).deletingLastPathComponent])
 				}
 				return module.objectForKeyedSubscript("exports")
 			}
 			return JSValue(object: fn, in: ctx)
 		}
 		ctx.setObject(makeRequire(dir), forKeyedSubscript: "require" as NSString)
+		// то, что ждут многие пакеты npm (Node-API вроде fs и http нет)
+		ctx.evaluateScript("var global = globalThis; var process = { env: { NODE_ENV: 'production' }, argv: [], platform: 'ios', version: 'v0', versions: {}, nextTick: function(f){ setTimeout(f, 0) }, cwd: function(){ return '/' } };")
 
 		// таймеры: простой цикл событий после основного скрипта
 		struct Timer { let id: Int; var at: Date; let every: Double?; let fn: JSValue }

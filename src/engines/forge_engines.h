@@ -9,6 +9,15 @@ int forge_run_python(const char *path);
 int forge_run_lua(const char *path);
 int forge_run_c(const char *path);
 
+/// Папки установленных пакетов проекта (менеджер пакетов Forge): для Python — где ещё искать import
+/// (через ':'), для Lua — что добавить в начало package.path. NULL или "" — ничего. Строки копируются.
+void forge_set_module_paths(const char *python_dirs, const char *lua_path);
+
+/// Разбор rockspec LuaRocks в песочнице Lua. Возвращает строки через \n (освободить free()):
+/// "url\t<source.url>", "tag\t…", "branch\t…", "dir\t…", "type\t<build.type>", "dep\t<зависимость>",
+/// "mod\t<модуль>\t<файл>" (build.modules). NULL при ошибке; *error — сообщение (освободить free()).
+char *forge_parse_rockspec(const char *text, char **error);
+
 /// Прерывает текущий запуск (можно звать с любого потока).
 void forge_request_stop(void);
 

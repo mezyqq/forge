@@ -37,6 +37,11 @@ Release-сборка сама повышает `VERSION`/`BUILD` в `ipa.conf`, 
   Консоль с вводом и кнопкой «Стоп».
 - **Нативный запуск с JIT** (компилятор + включённый для Forge JIT): скрипты `.c`, `.cpp`, `.m` компилируются clang и
   выполняются нативно; iOS-проект можно запустить прямо в Forge без установки (см. ниже).
+- **Пакеты из интернета** (меню проекта → Пакеты): PyPI (чистый Python → `py_modules/`, просто `import`), npm (с
+  зависимостями и semver → `node_modules/`, `require('имя')` как в Node), LuaRocks (модули на чистом Lua → `lua_modules/`) и
+  каталог C/C++ библиотек из одного файла (stb, cJSON, nlohmann/json, miniaudio… → `vendor/`, `#include "cJSON.h"`).
+  Список хранится в `packages.json` («Установить всё» после клона); ИИ умеет ставить пакеты сам (`install_package`).
+  Python — это pocketpy, JS — JavaScriptCore, поэтому пакеты с C-расширениями или API Node работать не будут.
 - **Сборка .ipa на телефоне**: C, Objective-C, C++ через встроенные clang + lld: список ошибок с переходом к строке,
   установка в LiveContainer одной кнопкой (см. ниже).
 - **ИИ-агент** на основе идей opencode: стриминг, инструменты read/edit/write/glob/grep/list/run/build/

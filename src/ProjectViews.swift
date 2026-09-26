@@ -14,6 +14,7 @@ struct ProjectView: View {
 	@State private var run: RunTarget?
 	@State private var building: BuildTarget?
 	@State private var quickRun = false
+	@State private var showPackages = false
 	@State private var error: String?
 
 	/// iOS-приложение (есть ipa.conf) — главная кнопка собирает .ipa, а не запускает скрипт.
@@ -65,6 +66,7 @@ struct ProjectView: View {
 				Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
 				Menu {
 					Button { showConf = true } label: { Label(L("Project settings"), systemImage: "slider.horizontal.3") }
+					Button { showPackages = true } label: { Label(L("Packages"), systemImage: "shippingbox.circle") }
 					if isApp && IpaBuilder.available {
 						Button { quickRun = true } label: {
 							Label(L("Run in Forge (JIT, no install)"), systemImage: "bolt.fill")
@@ -91,6 +93,7 @@ struct ProjectView: View {
 		}
 		.sheet(item: $share) { ShareSheet(url: $0.url) }
 		.sheet(isPresented: $showConf) { ConfView(project: project) }
+		.sheet(isPresented: $showPackages) { PackagesView(project: project) }
 		.sheet(isPresented: $showSearch) { SearchView(project: project) }
 		.sheet(isPresented: $showGit) { GitView(project: project) }
 		.fullScreenCover(item: $run) { RunSheet(target: $0) }

@@ -37,6 +37,11 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
   A console with input and a Stop button.
 - **Native run with JIT** (compiler + JIT enabled for Forge): `.c`, `.cpp`, `.m` scripts are compiled by clang and
   run natively; an iOS project can be run right inside Forge without installing (see below).
+- **Packages from the internet** (project menu → Packages): PyPI (pure-Python → `py_modules/`, just `import`), npm (with
+  dependencies and semver → `node_modules/`, `require('name')` like Node), LuaRocks (pure-Lua modules → `lua_modules/`) and a
+  C/C++ catalog of single-file libraries (stb, cJSON, nlohmann/json, miniaudio… → `vendor/`, `#include "cJSON.h"`). The
+  list is kept in `packages.json` ("Install everything" after a clone); the AI can install packages itself
+  (`install_package`). Python is pocketpy and JS is JavaScriptCore, so packages needing C extensions or Node APIs won't run.
 - **Building .ipa on the phone**: C, Objective-C, C++ with the built-in clang + lld: a tappable list of errors, one-tap
   install into LiveContainer (see below).
 - **AI agent** based on opencode's ideas: streaming, read/edit/write/glob/grep/list/run/build/todowrite/webfetch

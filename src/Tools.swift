@@ -107,6 +107,15 @@ final class ToolBox {
 		Only for projects with ipa.conf; Swift is not compiled on the phone.
 		""", [:], []),
 
+		tool("install_package", """
+		Installs a library into this project from the internet. manager: pypi (pure-Python packages → py_modules/, then just import them),
+		npm (→ node_modules/ with dependencies, then require('name'); JavaScriptCore, no Node APIs like fs/http),
+		luarocks (pure-Lua modules → lua_modules/, then require), c (single-file C/C++ libraries from a catalog: stb_image, stb_image_write,
+		stb_truetype, stb_ds, cjson, nlohmann_json, miniaudio, dr_wav, dr_mp3, linmath, tinyexpr → vendor/, #include "name.h").
+		Use it when code needs a library instead of writing it from scratch; prefer small, pure packages. It is recorded in packages.json.
+		""", ["manager": prop("string", "pypi | npm | luarocks | c"),
+		      "name": prop("string", "Package name, optionally with a version: requests==2.32.0, lodash@^4, inspect@3.1.3-0")], ["manager", "name"]),
+
 		tool("todowrite", """
 		Create and maintain a structured task list for the current task. Use it proactively when the task has 3+ steps,
 		when the user gives several tasks, or asks for a plan. Keep exactly ONE item in_progress while work remains; mark items
@@ -140,7 +149,7 @@ final class ToolBox {
 			"find": "glob", "find_files": "glob", "search": "grep", "search_files": "grep", "ripgrep": "grep",
 			"rename": "move", "mv": "move", "remove": "delete", "rm": "delete", "delete_file": "delete",
 			"run_file": "run", "execute": "run", "exec": "run", "build_app": "build", "compile": "build", "make": "build", "build_ipa": "build", "todo": "todowrite", "todo_write": "todowrite",
-			"fetch": "webfetch", "web_fetch": "webfetch", "take_screenshot": "screenshot", "screen": "screenshot",
+			"fetch": "webfetch", "web_fetch": "webfetch", "pip": "install_package", "pip_install": "install_package", "npm_install": "install_package", "install": "install_package", "add_package": "install_package", "take_screenshot": "screenshot", "screen": "screenshot",
 		]
 		return aliases[n]
 	}
@@ -409,6 +418,23 @@ final class ToolBox {
 			if code != 0 { text += "\n\nBuild log (end):\n" + String(out.suffix(4000)) }
 			let errors = issues.filter(\.isError).count
 			return (text, code == 0 ? L("building the app — success") : L("building the app — %@ errors", max(errors, 1)))
+
+		case "install_package":
+			let m = try str(input, ["manager", "ecosystem", "registry", "language"])!
+			guard let eco = Ecosystem.parse(m) else { throw ArgError(message: "manager must be pypi, npm, luarocks or c") }
+			let name = try str(input, ["name", "package", "spec"])!
+			final class Lines { var all: [String] = [] }
+			let lines = Lines()
+			try await PackageManager(project: project.url) { l in lines.all.append(l) }.install(eco, name)
+			store.touch()
+			let use: String
+			switch eco {
+			case .pypi: use = "import it in Python scripts."
+			case .npm: use = "require('\(name)') it in JavaScript."
+			case .luarocks: use = "require it in Lua."
+			case .c: use = "#include its header (the vendor folder is on the include path)."
+			}
+			return ("Installed:\n" + lines.all.joined(separator: "\n") + "\nNow " + use, L("installing %@ (%@)", name, eco.registry))
 
 		case "todowrite":
 			guard let list = input["todos"] as? [[String: Any]] else { throw ArgError(message: "todos must be an array") }

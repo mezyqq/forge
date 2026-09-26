@@ -120,8 +120,9 @@ enum Prompts {
 	- run: run a .py/.js/.lua/.c script (and .cpp/.m when native run is available) and get its output — use it to test.
 	- build: build the iOS app (projects with ipa.conf) on the phone and get compiler errors — use it after changing app code.
 	- screenshot (only when the user enabled it): an image of the open app preview — use it to check UI changes.
+	- install_package: add a library from PyPI (pure Python), npm, LuaRocks (pure Lua) or the C/C++ catalog to the project.
 	- todowrite: plan and track multi-step work. webfetch: read documentation pages.
-	All paths are relative to the project root. There is no shell, no package manager and no network access for scripts.
+	All paths are relative to the project root. There is no shell and no network access for scripts; add libraries with install_package.
 	"""
 
 	static let forge = """

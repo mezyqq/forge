@@ -66,6 +66,9 @@ final class ProjectStore: ObservableObject {
 	/// Растёт, когда файлы меняет не редактор (агент, удаление) — открытые экраны перечитывают диск.
 	@Published private(set) var fsVersion = 0
 
+	/// Файлы поменялись не через write (пакеты, распаковка) — обновить дерево и открытые редакторы.
+	func touch() { fsVersion += 1 }
+
 	let root: URL
 	private let fm = FileManager.default
 	private var agents: [URL: Agent] = [:]
