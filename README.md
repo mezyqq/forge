@@ -5,6 +5,14 @@
 A code editor, an AI agent, script runners and GitHub right on your phone. Built on Linux with
 [ipab](https://github.com/mezyqq/ios-compiler-for-linux) and installed through LiveContainer / iloader.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/editor.jpg" width="260" alt="Editor">
+  <img src="docs/screenshots/themes.jpg" width="260" alt="Themes">
+  <img src="docs/screenshots/settings.jpg" width="260" alt="Settings">
+</p>
+
 ## Building
 
 ```sh

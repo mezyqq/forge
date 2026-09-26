@@ -5,6 +5,14 @@
 Редактор кода, ИИ-агент, запуск скриптов и GitHub прямо на телефоне. Собирается на Linux через
 [ipab](https://github.com/mezyqq/ios-compiler-for-linux) и ставится через LiveContainer / iloader.
 
+## Скриншоты
+
+<p>
+  <img src="docs/screenshots/editor.jpg" width="260" alt="Редактор">
+  <img src="docs/screenshots/themes.jpg" width="260" alt="Темы">
+  <img src="docs/screenshots/settings.jpg" width="260" alt="Настройки">
+</p>
+
 ## Сборка
 
 ```sh
