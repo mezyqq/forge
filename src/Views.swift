@@ -183,6 +183,7 @@ struct SettingsView: View {
 	var body: some View {
 		NavigationStack {
 			Form {
+				UpdateSection()
 				Section(L("Language")) {
 					Picker(L("Language"), selection: $language) {
 						ForEach(L10n.languages, id: \.id) { Text($0.title).tag($0.id) }

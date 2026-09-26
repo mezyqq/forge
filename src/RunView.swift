@@ -81,6 +81,7 @@ struct BuildView: View {
 	@State private var share: ShareItem?
 	@State private var issues: [Clang.Issue] = []
 	@State private var installed = false
+	@State private var installing = false
 	@State private var error: String?
 
 	var body: some View {
@@ -99,6 +100,11 @@ struct BuildView: View {
 								.frame(maxWidth: .infinity)
 						}
 						.buttonStyle(.borderedProminent)
+						.disabled(installing)
+						if installed && LiveContainer.hosting {
+							Text(L("Installed into LiveContainer. Open closes Forge and shows LiveContainer — tap the app there (it gets signed on that launch)."))
+								.font(.footnote).foregroundStyle(.secondary)
+						}
 						HStack(spacing: 8) {
 							if installed {
 								Button(action: launch) {
@@ -184,12 +190,24 @@ struct BuildView: View {
 
 	private func install(_ ipa: URL) {
 		Task {
-			if await LiveContainer.install(ipa) { installed = true }
-			else { error = L("LiveContainer did not open. Is it installed? You can also share the .ipa.") }
+			if LiveContainer.hosting {
+				// Forge сам в LiveContainer: кладём приложение в его папку, подпишет LiveContainer при запуске
+				installing = true
+				defer { installing = false }
+				do {
+					_ = try await LiveContainer.installInside(ipa)
+					installed = true
+				} catch { self.error = error.localizedDescription }
+			} else if await LiveContainer.install(ipa) {
+				installed = true
+			} else {
+				error = L("LiveContainer did not open. Is it installed? You can also share the .ipa.")
+			}
 		}
 	}
 
 	private func launch() {
+		if LiveContainer.hosting { LiveContainer.openHostUI(); return }
 		let bid = (try? IpaBuilder.Config(project))?.value("BUNDLE_ID") ?? ""
 		Task {
 			if !(await LiveContainer.launch(bundleID: bid)) { error = L("LiveContainer did not open.") }

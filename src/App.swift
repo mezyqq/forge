@@ -6,7 +6,10 @@ struct ForgeApp: App {
 	@AppStorage("theme") private var themeID = "xcode"
 	@AppStorage(L10n.key) private var language = "en"
 
-	init() { CrashLog.install() }
+	init() {
+		CrashLog.install()
+		Updater.cleanup()  // старый бандл после обновления
+	}
 
 	var body: some Scene {
 		WindowGroup {

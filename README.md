@@ -46,6 +46,10 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
   and LLM7 (GLM-5.3-Flash, MiniMax-M2.7, Codestral).
 - **GitHub** over the API (no git): clone, commit and push, pull changes, branches, history with diffs,
   pull requests, issues, publishing a project to a new repository. Sign-in with a Personal Access Token.
+- **Updates** (Settings → Updates): checks GitHub Releases, downloads the new `.ipa` and, inside LiveContainer, replaces
+  Forge in place (LiveContainer's `LCAppInfo.plist` is kept, so projects, settings, keys and GitHub stay); then
+  Restart → LiveContainer opens → tap Forge (LiveContainer re-signs it on that launch). Outside LiveContainer the
+  `.ipa` is offered via Share. "Install in LiveContainer" after a build also works from inside LiveContainer now.
 - **Crash log** (Settings → Debugging): a report with the version, stack and recent actions.
 - **Interface language**: English by default, Russian in Settings → Language.
 
