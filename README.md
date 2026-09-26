@@ -1,60 +1,73 @@
-# Forge — IDE для iPhone и iPad
+**English** · [Русский](README.ru.md)
 
-Редактор кода, ИИ-агент, запуск скриптов и GitHub прямо на телефоне. Собирается на Linux через
-[ipab](../ios-compiler-for-linux) и ставится через LiveContainer / iloader.
+# Forge — an IDE for iPhone and iPad
 
-## Сборка
+A code editor, an AI agent, script runners and GitHub right on your phone. Built on Linux with
+[ipab](https://github.com/mezyqq/ios-compiler-for-linux) and installed through LiveContainer / iloader.
+
+## Building
 
 ```sh
 ~/ios-compiler-for-linux/ipab build ~/forge            # debug → ~/forge/build/Forge.ipa
-~/ios-compiler-for-linux/ipab build ~/forge --release  # версия +1 → ~/forge/releases/Forge-<версия>.ipa
+~/ios-compiler-for-linux/ipab build ~/forge --release  # version +1 → ~/forge/releases/Forge-<version>.ipa
 ```
 
-Release-сборка сама повышает `VERSION`/`BUILD` в `ipa.conf`, удаляет прошлый релиз и кладёт в `releases/`
-новый `.ipa` и карту символов `.map` (для расшифровки отчётов о вылетах). Обновляй приложение в LiveContainer
-установкой нового `.ipa` поверх старого — так сохранятся проекты, ключи и токен GitHub.
+A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous release and puts the new `.ipa` and the
+`.map` symbol map (for decoding crash reports) into `releases/`. Update the app in LiveContainer by installing the new
+`.ipa` over the old one — projects, keys and the GitHub token are kept.
 
-## Что умеет
+## Features
 
-- **Проекты** в Documents (видны в «Файлах»): шаблоны Python, JavaScript, веб-сайт, Lua, C (консоль) и
-  iOS-приложения (SwiftUI, Swift, ObjC, ObjC++, C). Дерево папок, импорт файлов, поиск по проекту, zip.
-- **Редактор**: подсветка ~20 языков, темы (Xcode, оранжевая, фиолетовая, розовая, Monokai, Nord, «Матрица»,
-  Ocean, Solarized), номера строк, поиск/замена, проверка синтаксиса на лету (Python, JS, Lua, C, JSON).
-- **Запуск без JIT**: Python (pocketpy), JavaScript (JavaScriptCore), Lua 5.4, C (picoc), живое превью HTML.
-  Консоль с вводом и кнопкой «Стоп».
-- **ИИ-агент** на основе идей opencode: стриминг, инструменты read/edit/write/glob/grep/list/run/todowrite/
-  webfetch, «прощающая» замена в edit, план задач, защита от зацикливания, диагностика синтаксиса после правок.
-  Любые провайдеры: OpenAI-совместимые и Anthropic. По умолчанию — бесплатный Pollinations без ключа;
-  лучше всего работает с бесплатным big-pickle из OpenCode Zen (нужен ключ с opencode.ai/auth).
-- **GitHub** через API (без git): клон, коммит и пуш, получение изменений, ветки, история с диффами,
-  pull request'ы, issues, публикация проекта в новый репозиторий. Вход — Personal Access Token.
-- **Журнал вылетов** (Настройки → Отладка): отчёт с версией, стеком и последними действиями.
+- **Projects** in Documents (visible in the Files app): templates for Python, JavaScript, website, Lua, C (console)
+  and iOS apps (SwiftUI, Swift, ObjC, ObjC++, C). Folder tree, file import, project-wide search, zip.
+- **Editor**: highlighting for ~20 languages, themes (Xcode, orange, purple, pink, Monokai, Nord, Matrix, Ocean,
+  Solarized), line numbers, find/replace, live syntax checking (Python, JS, Lua, C, JSON).
+- **Running without JIT**: Python (pocketpy), JavaScript (JavaScriptCore), Lua 5.4, C (picoc), live HTML preview.
+  A console with input and a Stop button.
+- **Building .ipa on the phone**: C, Objective-C, C++ with the built-in clang + lld (see below).
+- **AI agent** based on opencode's ideas: streaming, read/edit/write/glob/grep/list/run/todowrite/webfetch tools,
+  forgiving replacement in edit, a task plan, loop protection, syntax diagnostics after edits.
+  Any provider: OpenAI-compatible and Anthropic. The default is the free Pollinations without a key;
+  it works best with the free big-pickle from OpenCode Zen (needs a key from opencode.ai/auth).
+- **GitHub** over the API (no git): clone, commit and push, pull changes, branches, history with diffs,
+  pull requests, issues, publishing a project to a new repository. Sign-in with a Personal Access Token.
+- **Crash log** (Settings → Debugging): a report with the version, stack and recent actions.
+- **Interface language**: English by default, Russian in Settings → Language.
 
-## Структура
+## Layout
 
 ```
 forge/
-  ipa.conf, Info.extra.plist   конфиг ipab (фреймворки, bridging header, карта символов, RELEASES)
-  src/                         Swift (UI, агент, GitHub, редактор) + C
-    engines/                   интерпретаторы: pocketpy, Lua 5.4.9, picoc (+ патчи под iOS) и прослойка forge_engines.c
-    forge_crash.c              обработчик вылетов (сигналы → отчёт)
-  res/icon.png, art/icon.svg   иконка и её исходник
-  tools/symbolicate.sh         «Forge+0x…» из отчёта → имя функции
-  compiler/                    компилятор для телефона (в работе): сборка clang + lld под iOS
-  releases/                    последний релиз .ipa + .map
-  THIRD_PARTY.txt              лицензии opencode, pocketpy, Lua, picoc
+  ipa.conf, Info.extra.plist   ipab config (frameworks, bridging header, symbol map, RELEASES)
+  src/                         Swift (UI, agent, GitHub, editor) + C
+    engines/                   interpreters: pocketpy, Lua 5.4.9, picoc (+ iOS patches) and the forge_engines.c glue
+    forge_crash.c              crash handler (signals → report)
+  res/icon.png, art/icon.svg   the icon and its source
+  tools/symbolicate.sh         "Forge+0x…" from a report → function name
+  compiler/                    separate repo ios-compiler: clang + lld for iOS (not part of Forge's git)
+  releases/                    the latest release .ipa + .map
+  THIRD_PARTY.txt              licenses of opencode, pocketpy, Lua, picoc
 ```
 
-## Отчёт о вылете
+## Crash reports
 
-Настройки → Отладка → Журнал вылетов → отчёт → «Поделиться». Расшифровать на компьютере:
+Settings → Debugging → Crash log → report → Share. Decode it on the computer:
 
 ```sh
-~/forge/tools/symbolicate.sh отчёт.txt   # карта берётся из releases/ по версии из отчёта
+~/forge/tools/symbolicate.sh report.txt   # the map is taken from releases/ by the version in the report
 ```
 
-## Компилятор для телефона (в работе)
+## Compiler on the phone
 
-`compiler/build-llvm.sh` собирает LLVM 22.1.8 (clang + lld, только AArch64) статическими библиотеками под
-arm64-apple-ios — долго, в фоне, лог в `compiler/build.log`. Потом компилятор встраивается в Forge: сборка
-C / Objective-C / C++ приложений в `.ipa` прямо на телефоне. Swift на телефоне компилироваться не будет.
+The 🔨 button of an iOS project (one with `ipa.conf`) builds a C / Objective-C / C++ app into an `.ipa` right on the
+phone: the built-in clang and lld from [ios-compiler](https://github.com/mezyqq/ios-compiler), with a trimmed iOS SDK
+inside the bundle. Same `ipa.conf`, `src/`, `res/`, `Info.plist` as ipab; the result is `build/<NAME>.ipa`, then
+Share → LiveContainer. Builds are incremental; the project menu has "Build release" (version +1). Swift is not compiled
+on the phone — build such projects with ipab on a computer.
+
+For the compiler to be included in Forge, build it next to it (otherwise Forge is built without it):
+
+```sh
+git clone https://github.com/mezyqq/ios-compiler ~/forge/compiler
+cd ~/forge/compiler && ./build-llvm.sh > build.log 2>&1 && make && make toolchain   # LLVM takes hours
+```
