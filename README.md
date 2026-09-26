@@ -62,8 +62,8 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
 - **Updates** (Settings → Updates): checks GitHub Releases, downloads the new `.ipa` and, inside LiveContainer, replaces
   Forge in place (LiveContainer's `LCAppInfo.plist` is kept, so projects, settings, keys and GitHub stay); then
   Restart → LiveContainer opens → tap Forge (LiveContainer re-signs it on that launch). Installed directly (not in
-  LiveContainer), Forge hands the release to SideStore (`sidestore://install`), which replaces it keeping the data; a
-  notification then opens the new version. Or download the `.ipa` and install it another way (deleted on next launch). "Install in LiveContainer" after a build also works from inside LiveContainer now.
+  LiveContainer), Forge downloads the `.ipa` to install over it with iloader (the file is deleted on next launch);
+  a separately installed SideStore can be used too (`sidestore://install`, a notification then opens the new version). "Install in LiveContainer" after a build also works from inside LiveContainer now.
 - **Crash log** (Settings → Debugging): a report with the version, stack and recent actions.
 - **Interface language**: English by default, Russian in Settings → Language.
 

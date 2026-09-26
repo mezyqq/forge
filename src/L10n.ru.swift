@@ -468,5 +468,10 @@ let ruPairs: [(String, String)] = [
 	 "SideStore заменит Forge с сохранением данных; во время установки Forge закроется. Через минуту придёт уведомление — нажми, чтобы открыть новую версию."),
 	("SideStore did not open. Is it installed? You can download the .ipa and install it another way.",
 	 "SideStore не открылся. Он установлен? Можно скачать .ipa и установить иначе."),
-	("If the update has finished installing, tap to open Forge.", "Если обновление установилось, нажми, чтобы открыть Forge."),
+	("If the update has finished installing, tap to open Forge.", "Если обновление установилось, нажми, чтобы открыть Forge."),	("Download Forge %@ (.ipa)", "Скачать Forge %@ (.ipa)"),
+	("Forge is installed directly and cannot replace itself. Download the .ipa, save it or send it to your computer and install it over Forge with iloader — projects, settings, keys and GitHub stay.",
+	 "Forge установлен напрямую и не может заменить сам себя. Скачай .ipa, сохрани или отправь на компьютер и поставь поверх Forge через iloader — проекты, настройки, ключи и GitHub сохранятся."),
+	("Install with SideStore", "Установить через SideStore"),
+	("Only for a separately installed SideStore. The SideStore built into LiveContainer may be unable to start (a broken signature of its framework) and then LiveContainer crashes.",
+	 "Только для отдельно установленного SideStore. Встроенный в LiveContainer SideStore может не запуститься (битая подпись его фреймворка), и тогда падает весь LiveContainer."),
 ]

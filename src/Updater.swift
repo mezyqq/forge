@@ -282,10 +282,18 @@ struct UpdateSection: View {
 				Text(L("Forge will close and LiveContainer will open — tap Forge there. LiveContainer re-signs the new version on that launch. Projects, settings, keys and GitHub stay."))
 					.font(.footnote).foregroundStyle(.secondary)
 			case .sideload(let r):
-				Button { u.installWithSideStore(r) } label: { Label(L("Install %@ with SideStore", r.version), systemImage: "arrow.down.app.fill") }
-				Button { Task { await u.downloadForShare(r) } } label: { Label(L("Download the .ipa to install another way"), systemImage: "square.and.arrow.down") }
-				Text(L("SideStore replaces Forge and keeps its data; Forge closes during the install. A minute later a notification appears — tap it to open the new version."))
+				// главное — скачать .ipa: ссылку sidestore:// может перехватить SideStore, встроенный в LiveContainer,
+				// а у него бывает битая подпись фреймворка — тогда падает весь LiveContainer
+				Button { Task { await u.downloadForShare(r) } } label: {
+					Label(L("Download Forge %@ (.ipa)", r.version), systemImage: "arrow.down.circle.fill")
+				}
+				Text(L("Forge is installed directly and cannot replace itself. Download the .ipa, save it or send it to your computer and install it over Forge with iloader — projects, settings, keys and GitHub stay."))
 					.font(.footnote).foregroundStyle(.secondary)
+				DisclosureGroup(L("Install with SideStore")) {
+					Text(L("Only for a separately installed SideStore. The SideStore built into LiveContainer may be unable to start (a broken signature of its framework) and then LiveContainer crashes."))
+						.font(.footnote).foregroundStyle(.orange)
+					Button { u.installWithSideStore(r) } label: { Label(L("Install %@ with SideStore", r.version), systemImage: "arrow.down.app") }
+				}
 			case .downloaded(let ipa):
 				Button { share = ShareItem(url: ipa) } label: { Label(L("Share %@", ipa.lastPathComponent), systemImage: "square.and.arrow.up") }
 				Text(L("Forge is not running inside LiveContainer, so it cannot replace itself. Install this .ipa over the current app with your installer — data is kept when the bundle ID is the same. The file is deleted the next time Forge starts."))
