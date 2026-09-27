@@ -40,6 +40,8 @@ struct CodeEditor: UIViewRepresentable {
 	let lang: Lang
 	let fontSize: CGFloat
 	let lineNumbers: Bool
+	/// Шрифт и лигатуры из настроек — при смене текст перекрашивается.
+	var fontKey = ""
 	var theme: Theme = Theme.all[0]
 	var errorLine: Int? = nil
 	/// Автодополнение (clang): текст и позиция курсора (UTF-16) → варианты. nil — выключено.
@@ -85,9 +87,10 @@ struct CodeEditor: UIViewRepresentable {
 
 	private func apply(_ tv: CodeTextView, force: Bool) {
 		if tv.errorLine != errorLine { tv.errorLine = errorLine; tv.setNeedsDisplay() }
-		let styleChanged = tv.fontSize != fontSize || tv.showLines != lineNumbers || tv.langName != lang.name || tv.theme != theme
+		let styleChanged = tv.fontSize != fontSize || tv.fontKey != fontKey || tv.showLines != lineNumbers || tv.langName != lang.name || tv.theme != theme
 		guard force || styleChanged || tv.text != text else { return }
 		tv.fontSize = fontSize
+		tv.fontKey = fontKey
 		tv.showLines = lineNumbers
 		tv.langName = lang.name
 		if tv.theme != theme || force { tv.apply(theme) }
@@ -170,6 +173,7 @@ struct CodeEditor: UIViewRepresentable {
 /// UITextView с номерами строк слева. Номера рисуются в draw(_:) под текстом, в области отступа.
 final class CodeTextView: UITextView {
 	var fontSize: CGFloat = 14
+	var fontKey = ""
 	var showLines = true
 	var langName = ""
 	var theme = Theme.all[0]

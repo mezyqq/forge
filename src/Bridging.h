@@ -11,3 +11,4 @@ void JSContextGroupSetExecutionTimeLimit(JSContextGroupRef group, double limit, 
 #if __has_include("../compiler/ioscc.h")
 #include "../compiler/ioscc.h"
 #endif
+#include "forge_gfx.h"

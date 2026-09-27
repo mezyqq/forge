@@ -286,12 +286,12 @@ final class ProjectStore: ObservableObject {
 // MARK: шаблоны: iOS-приложения (как у ipab new) и скрипты, которые запускаются прямо в Forge
 
 enum Template: String, CaseIterable, Identifiable {
-	case python, js, web, lua, cscript, cppscript, objc, game, c, objcpp, swift, swiftui, empty
+	case python, pygame, js, web, lua, love, cscript, cppscript, objc, game, c, objcpp, swift, swiftui, empty
 	var id: String { rawValue }
 
 	var isApp: Bool { [.objc, .game, .c, .objcpp, .swift, .swiftui, .empty].contains(self) }
 
-	static let scripts: [Template] = [.python, .js, .web, .lua, .cscript, .cppscript]
+	static let scripts: [Template] = [.python, .pygame, .js, .web, .lua, .love, .cscript, .cppscript]
 	static let apps: [Template] = [.swiftui, .swift, .objc, .game, .objcpp, .c, .empty]
 
 	var title: String {
@@ -302,6 +302,8 @@ enum Template: String, CaseIterable, Identifiable {
 		case .lua: return "Lua"
 		case .cscript: return L("C (console)")
 		case .cppscript: return L("C++ (console, JIT)")
+		case .pygame: return L("Game (Python, pygame)")
+		case .love: return L("Game (Lua, LÖVE)")
 		case .game: return L("Game (Objective-C)")
 		case .objc: return "Objective-C"
 		case .c: return L("C (UIKit via runtime)")
@@ -458,6 +460,95 @@ enum Template: String, CaseIterable, Identifiable {
 			    printf("\\n");
 			    return 0;
 			}
+
+			"""),
+		]
+		case .pygame: return [
+			("main.py", """
+			# \(L("Catch the ball: tap to move the paddle (or use the arrows). Forge's pygame — the main part of the pygame API."))
+			import pygame, random
+
+			pygame.init()
+			W, H = 400, 700
+			screen = pygame.display.set_mode((W, H))
+			clock = pygame.time.Clock()
+			font = pygame.font.SysFont(None, 36)
+
+			paddle = pygame.Rect(W // 2 - 50, H - 60, 100, 16)
+			ball = pygame.Rect(W // 2, 80, 20, 20)
+			vx, vy = 4, 5
+			score = 0
+			running = True
+			while running:
+			    for e in pygame.event.get():
+			        if e.type == pygame.QUIT:
+			            running = False
+			        elif e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+			            paddle.centerx = e.pos[0]
+			    keys = pygame.key.get_pressed()
+			    if keys[pygame.K_LEFT]:
+			        paddle.x -= 8
+			    if keys[pygame.K_RIGHT]:
+			        paddle.x += 8
+
+			    ball.x += vx
+			    ball.y += vy
+			    if ball.left < 0 or ball.right > W:
+			        vx = -vx
+			    if ball.top < 0:
+			        vy = -vy
+			    if ball.colliderect(paddle) and vy > 0:
+			        vy = -vy
+			        score += 1
+			    if ball.top > H:
+			        ball.center = (W // 2, 80)
+			        vx, vy = random.choice([-4, 4]), 5
+			        score = 0
+
+			    screen.fill((20, 22, 35))
+			    pygame.draw.rect(screen, (255, 122, 26), paddle, border_radius=8)
+			    pygame.draw.circle(screen, (255, 255, 255), ball.center, 10)
+			    screen.blit(font.render("\(L("Score:")) %d" % score, True, (230, 230, 230)), (16, 16))
+			    pygame.display.flip()
+			    clock.tick(60)
+
+			pygame.quit()
+
+			"""),
+		]
+		case .love: return [
+			("main.lua", """
+			-- \(L("A LÖVE-style program: love.load / love.update / love.draw. Tap to add circles, the arrows move the square."))
+			local x, y = 200, 300
+			local dots = {}
+
+			function love.load()
+			  love.window.setMode(400, 700)
+			  love.graphics.setBackgroundColor(0.08, 0.09, 0.14)
+			end
+
+			function love.update(dt)
+			  local speed = 220 * dt
+			  if love.keyboard.isDown("left") then x = x - speed end
+			  if love.keyboard.isDown("right") then x = x + speed end
+			  if love.keyboard.isDown("up") then y = y - speed end
+			  if love.keyboard.isDown("down") then y = y + speed end
+			end
+
+			function love.mousepressed(mx, my)
+			  dots[#dots + 1] = {mx, my, math.random(), math.random(), math.random()}
+			end
+
+			function love.draw()
+			  for _, d in ipairs(dots) do
+			    love.graphics.setColor(d[3], d[4], d[5])
+			    love.graphics.circle("fill", d[1], d[2], 18)
+			  end
+			  love.graphics.setColor(1, 0.48, 0.1)
+			  love.graphics.rectangle("fill", x - 25, y - 25, 50, 50)
+			  love.graphics.setColor(1, 1, 1)
+			  love.graphics.print("FPS " .. love.timer.getFPS(), 12, 12)
+			end
 
 			"""),
 		]

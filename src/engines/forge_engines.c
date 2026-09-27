@@ -9,6 +9,7 @@
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
 #include "picoc/picoc.h"
+#include "../forge_gfx.h"
 
 volatile int forge_stop_flag = 0;  // читают Lua-хук и парсер picoc (patched parse.c)
 static volatile int py_running = 0;
@@ -80,6 +81,7 @@ static char *read_file(const char *path) {
 int forge_run_python(const char *path) {
 	if (!py_inited) py_ensure(); else py_resetvm();
 	py_callbacks()->importfile = forge_importfile;  // resetvm возвращает колбэки по умолчанию
+	forge_gfx_register_python();  // графика: модуль _gfx (на нём pygame из бандла)
 	char *src = read_file(path);
 	if (!src) { fprintf(stderr, "could not read %s\n", path); return 1; }
 	forge_stop_flag = 0;
@@ -114,7 +116,11 @@ int forge_run_lua(const char *path) {
 		lua_setfield(L, -3, "path");
 		lua_pop(L, 2);
 	}
+	forge_gfx_register_lua(L);  // графика: gfx и love (forge_love.lua из бандла)
+	(void)luaL_dostring(L, "pcall(require, 'forge_love')");
 	int r = luaL_dofile(L, path);
+	// программа в стиле LÖVE: определила love.draw / love.update — запускаем её цикл
+	if (r == LUA_OK) r = luaL_dostring(L, "if love and love.__run and (love.draw or love.update) then love.__run() end");
 	if (r != LUA_OK) fprintf(stderr, "%s\n", lua_tostring(L, -1));
 	lua_close(L);
 	fflush(stdout);

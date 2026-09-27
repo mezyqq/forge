@@ -37,6 +37,13 @@ A release build bumps `VERSION`/`BUILD` in `ipa.conf`, removes the previous rele
   A console with input and a Stop button.
 - **Native run with JIT** (compiler + JIT enabled for Forge): `.c`, `.cpp`, `.m` scripts are compiled by clang and
   run natively; an iOS project can be run right inside Forge without installing (see below).
+- **Graphics and games in scripts:** `import pygame` in Python (Forge's own pygame: display, draw, events, keys, mouse,
+  Clock, fonts, images, Rect, sprites — no sound) and LÖVE-style Lua (`love.load/update/draw`, `love.graphics…`) or the
+  low-level `gfx`. The game screen appears above the console; taps act as the mouse and an on-screen pad sends arrows,
+  space, Enter and Esc. Templates "Game (Python, pygame)" and "Game (Lua, LÖVE)".
+- **Editor fonts** JetBrains Mono, Fira Code, Cascadia Code (plus SF Mono and Menlo) with code ligatures (can be turned off);
+  **Markdown preview** for `.md` files; **find and replace across the project** (case, regex, preview); on iPad the app
+  **preview can be docked beside the editor**.
 - **Packages from the internet** (project menu → Packages): PyPI (pure-Python → `py_modules/`, just `import`), npm (with
   dependencies and semver → `node_modules/`, `require('name')` like Node), LuaRocks (pure-Lua modules → `lua_modules/`) and a
   C/C++ catalog of single-file libraries (stb, cJSON, nlohmann/json, miniaudio… → `vendor/`, `#include "cJSON.h"`). The

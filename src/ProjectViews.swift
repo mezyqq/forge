@@ -238,8 +238,12 @@ struct EditorScreen: View {
 	@State private var error: String?
 	@State private var run: RunTarget?
 	@AppStorage("autocomplete") private var autocomplete = true
+	@AppStorage(EditorFonts.key) private var editorFont = "system"
+	@State private var mdPreview = false
+	@AppStorage(EditorFonts.ligaturesKey) private var ligatures = true
 
 	private var lang: Lang { Lang.detect(path) }
+	private var isMarkdown: Bool { ["md", "markdown"].contains((path as NSString).pathExtension.lowercased()) }
 	private var isApp: Bool { FileManager.default.fileExists(atPath: project.url.appendingPathComponent("ipa.conf").path) }
 	/// Проверка и автодополнение встроенным clang (в iOS-проекте — все C-файлы, в скриптовом — кроме .c для picoc).
 	private var useClang: Bool {
@@ -252,8 +256,10 @@ struct EditorScreen: View {
 		Group {
 			if binary {
 				BinaryPreview(url: (try? store.resolve(path, in: project)))
+			} else if mdPreview && isMarkdown {
+				MarkdownView(text: text, base: ((try? store.resolve(path, in: project)) ?? project.url).deletingLastPathComponent())
 			} else {
-				CodeEditor(text: $text, lang: lang, fontSize: CGFloat(fontSize), lineNumbers: lineNumbers,
+				CodeEditor(text: $text, lang: lang, fontSize: CGFloat(fontSize), lineNumbers: lineNumbers, fontKey: "\(editorFont)|\(ligatures)",
 				           theme: Theme.find(themeID), errorLine: diag?.line,
 				           completer: useClang && autocomplete ? complete : nil, handle: handle)
 					.ignoresSafeArea(.container, edges: .bottom)
@@ -282,6 +288,9 @@ struct EditorScreen: View {
 		.toolbar {
 			if !binary {
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
+					if isMarkdown {
+						Button { mdPreview.toggle() } label: { Image(systemName: mdPreview ? "pencil" : "eye") }
+					}
 					if canRun {
 						Button {
 							saveTask?.cancel()
@@ -464,42 +473,6 @@ struct ConfView: View {
 			t = Conf.set(t, f.0, values[f.0] ?? "")
 		}
 		do { try store.write("ipa.conf", t, in: project); dismiss() } catch { self.error = error.localizedDescription }
-	}
-}
-
-// MARK: поиск по проекту
-
-struct SearchView: View {
-	let project: Project
-	@EnvironmentObject var store: ProjectStore
-	@Environment(\.dismiss) private var dismiss
-	@State private var query = ""
-	@State private var hits: [String] = []
-
-	var body: some View {
-		NavigationStack {
-			List(hits, id: \.self) { h in
-				let parts = h.split(separator: ":", maxSplits: 2).map(String.init)
-				NavigationLink {
-					EditorScreen(project: project, path: parts[0], line: Int(parts[safe: 1] ?? ""))
-				} label: {
-					VStack(alignment: .leading, spacing: 2) {
-						Text("\(parts[0]):\(parts[safe: 1] ?? "")").font(.caption.monospaced()).foregroundStyle(.secondary)
-						Text(parts[safe: 2]?.trimmingCharacters(in: .whitespaces) ?? "").font(.footnote.monospaced()).lineLimit(2)
-					}
-				}
-			}
-			.overlay {
-				if hits.isEmpty && !query.isEmpty { Text(L("Nothing found")).foregroundStyle(.secondary) }
-			}
-			.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Text in project files"))
-			.textInputAutocapitalization(.never)
-			.autocorrectionDisabled()
-			.onChange(of: query) { q in hits = q.count < 2 ? [] : store.search(q, in: project) }
-			.navigationTitle(L("Search"))
-			.navigationBarTitleDisplayMode(.inline)
-			.toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } } }
-		}
 	}
 }
 

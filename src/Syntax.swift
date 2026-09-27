@@ -140,14 +140,14 @@ struct Lang {
 }
 
 enum Syntax {
-	static func font(_ size: CGFloat) -> UIFont { UIFont.monospacedSystemFont(ofSize: size, weight: .regular) }
+	static func font(_ size: CGFloat) -> UIFont { EditorFonts.font(size) }
 
 	static func base(_ size: CGFloat, _ theme: Theme) -> [NSAttributedString.Key: Any] {
 		let f = font(size)
 		let p = NSMutableParagraphStyle()
 		p.tabStops = []
 		p.defaultTabInterval = ("    " as NSString).size(withAttributes: [.font: f]).width
-		return [.font: f, .foregroundColor: theme.fg, .paragraphStyle: p]
+		return [.font: f, .foregroundColor: theme.fg, .paragraphStyle: p, .ligature: EditorFonts.ligatures ? 1 : 0]
 	}
 
 	/// Регулярки языка (без цветов — цвета берутся из темы при покраске).

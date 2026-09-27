@@ -216,7 +216,9 @@ final class PackageManager {
 	/// Пути для движков: import Python и require Lua.
 	static func modulePaths(_ project: URL) -> (python: String, lua: String) {
 		let py = Ecosystem.pypi.folder(project).path, lua = Ecosystem.luarocks.folder(project).path
-		return (py, "\(lua)/?.lua;\(lua)/?/init.lua")
+		// встроенные модули Forge (pygame, forge_love) — после пакетов проекта, чтобы их можно было подменить
+		let engines = Bundle.main.bundleURL.appendingPathComponent("engines").path
+		return ("\(py):\(engines)/python", "\(lua)/?.lua;\(lua)/?/init.lua;\(engines)/lua/?.lua")
 	}
 
 	// MARK: сеть

@@ -11,7 +11,14 @@ struct RunView: View {
 	var body: some View {
 		NavigationStack {
 			VStack(spacing: 0) {
-				ConsoleText(output: runner.output)
+				if let frame = runner.frame {
+					// скрипт рисует (pygame, love, gfx) — экран сверху, консоль снизу
+					GameCanvas(frame: frame)
+					Divider()
+					ConsoleText(output: runner.output).frame(height: 120)
+				} else {
+					ConsoleText(output: runner.output)
+				}
 				Divider()
 				HStack(spacing: 8) {
 					TextField(runner.running ? L("program input") : L("program is not running"), text: $input)
@@ -416,5 +423,98 @@ struct HostedController: UIViewControllerRepresentable {
 		host.addChild(vc)
 		host.view.addSubview(vc.view)
 		vc.didMove(toParent: host)
+	}
+}
+
+// MARK: графика скриптов
+
+/// Холст скрипта: кадр во всю доступную область (с сохранением пропорций), касания — мышь, снизу — пульт.
+struct GameCanvas: View {
+	let frame: CGImage
+	@AppStorage("gamePad") private var showPad = true
+	@State private var touching = false
+
+	var body: some View {
+		GeometryReader { geo in
+			let w = CGFloat(frame.width), h = CGFloat(frame.height)
+			let scale = min(geo.size.width / w, geo.size.height / h)
+			Image(decorative: frame, scale: 1)
+				.resizable()
+				.frame(width: w * scale, height: h * scale)
+				.contentShape(Rectangle())
+				.gesture(DragGesture(minimumDistance: 0)
+					.onChanged { v in
+						let x = Float(v.location.x / scale), y = Float(v.location.y / scale)
+						forge_gfx_push(Int32(touching ? GFX_MOVE : GFX_DOWN), x, y, 0)
+						touching = true
+					}
+					.onEnded { v in
+						forge_gfx_push(Int32(GFX_UP), Float(v.location.x / scale), Float(v.location.y / scale), 0)
+						touching = false
+					})
+				.position(x: geo.size.width / 2, y: geo.size.height / 2)
+		}
+		.background(Color.black)
+		.overlay(alignment: .bottom) { if showPad { GamePad().padding(10) } }
+		.overlay(alignment: .topTrailing) {
+			Button { showPad.toggle() } label: {
+				Image(systemName: showPad ? "gamecontroller.fill" : "gamecontroller")
+					.padding(8)
+					.background(.ultraThinMaterial, in: Circle())
+			}
+			.padding(8)
+		}
+	}
+}
+
+/// Экранный пульт: стрелки, A — пробел, B — Enter, Esc. Нажатие и отпускание — отдельные события.
+struct GamePad: View {
+	var body: some View {
+		HStack(alignment: .bottom) {
+			VStack(spacing: 4) {
+				PadKey(symbol: "arrowtriangle.up.fill", key: GFX_KEY_UP)
+				HStack(spacing: 4) {
+					PadKey(symbol: "arrowtriangle.left.fill", key: GFX_KEY_LEFT)
+					Color.clear.frame(width: 48, height: 48)
+					PadKey(symbol: "arrowtriangle.right.fill", key: GFX_KEY_RIGHT)
+				}
+				PadKey(symbol: "arrowtriangle.down.fill", key: GFX_KEY_DOWN)
+			}
+			Spacer()
+			VStack(spacing: 8) {
+				PadKey(label: "Esc", key: GFX_KEY_ESCAPE, small: true)
+				HStack(spacing: 10) {
+					PadKey(label: "B", key: GFX_KEY_RETURN)
+					PadKey(label: "A", key: GFX_KEY_SPACE)
+				}
+			}
+		}
+	}
+}
+
+struct PadKey: View {
+	var symbol: String? = nil
+	var label: String? = nil
+	let key: Int
+	var small = false
+	@State private var down = false
+
+	var body: some View {
+		Group {
+			if let symbol { Image(systemName: symbol) } else { Text(label ?? "").font(.headline) }
+		}
+		.frame(width: small ? 44 : 48, height: small ? 30 : 48)
+		.foregroundStyle(.white)
+		.background(Color.white.opacity(down ? 0.45 : 0.18), in: RoundedRectangle(cornerRadius: small ? 8 : 24))
+		.gesture(DragGesture(minimumDistance: 0)
+			.onChanged { _ in
+				guard !down else { return }
+				down = true
+				forge_gfx_push(Int32(GFX_KEYDOWN), 0, 0, Int32(key))
+			}
+			.onEnded { _ in
+				down = false
+				forge_gfx_push(Int32(GFX_KEYUP), 0, 0, Int32(key))
+			})
 	}
 }

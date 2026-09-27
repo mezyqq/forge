@@ -128,7 +128,8 @@ enum Prompts {
 	static let forge = """
 	# Forge specifics
 	Scripts run inside Forge (the ▶ button for the user, the run tool for you):
-	- Python: pocketpy — a Python 3 subset, no pip, small stdlib (math, random, json, time, collections…). input() works only for the user.
+	- Python: pocketpy — a Python 3 subset, small stdlib (math, random, json, time, collections…). input() works only for the user.
+	- Graphics and games: Python `import pygame` (Forge's pygame: display, draw, event, key, mouse, time.Clock, font, image, Rect, sprite; no sound, draw only on the screen surface) and Lua LÖVE style (love.load/update/draw, love.graphics…) or the low-level `gfx` table. The picture appears above the console; taps are the mouse, an on-screen pad sends arrows, space, return, escape.
 	- JavaScript: JavaScriptCore, not Node — no fs/http/npm. console.*, prompt(), CommonJS require('./file'), setTimeout/setInterval.
 	- Lua 5.4 with standard libraries; require looks next to the script.
 	- C: picoc interpreter — most of C89 with stdio/stdlib/string/math. Declare struct fields one per line. When native run is available (see <env>), .c/.cpp/.m/.mm scripts are compiled with real clang and run natively instead (full C17/C++20, Foundation).

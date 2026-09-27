@@ -41,9 +41,22 @@ final class Runner: ObservableObject {
 	@Published private(set) var output = ""
 	@Published private(set) var running = false
 	@Published private(set) var title = ""
+	/// Последний кадр графики скрипта (pygame, love, gfx); nil — скрипт ничего не рисовал.
+	@Published private(set) var frame: CGImage?
 
 	private var inWrite: Int32 = -1
 	private var generation = 0
+
+	init() {
+		// кадры приходят с потока запуска; следующий — только после показа этого
+		forge_gfx_set_presenter { img, _, _ in
+			guard let img else { forge_gfx_frame_consumed(); return }
+			DispatchQueue.main.async {
+				Runner.shared.frame = img
+				forge_gfx_frame_consumed()
+			}
+		}
+	}
 
 	private final class Box { var code: Int32 = 0 }
 
@@ -136,6 +149,8 @@ final class Runner: ObservableObject {
 		// пакеты проекта (менеджер пакетов): py_modules/ и lua_modules/
 		let mp = PackageManager.modulePaths(PackageManager.projectRoot(of: url))
 		forge_set_module_paths(mp.python, mp.lua)
+		forge_gfx_reset()
+		frame = nil
 		launch(title: url.lastPathComponent, dir: dir, interactive: interactive, body: {
 			switch kind {
 			case .python: return forge_run_python(path)

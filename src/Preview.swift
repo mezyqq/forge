@@ -11,6 +11,8 @@ final class PreviewHost: ObservableObject {
 	@Published private(set) var vc: UIViewController?
 	@Published private(set) var project: URL?
 	@Published var expanded = false
+	/// iPad: превью пристыковано справа от редактора.
+	@Published var docked = false
 	@Published private(set) var log = ""
 	@Published private(set) var reloading = false
 	@Published private(set) var reloadError: String?
@@ -140,11 +142,19 @@ struct PreviewHostModifier: ViewModifier {
 	@ObservedObject private var host = PreviewHost.shared
 
 	func body(content: Content) -> some View {
-		content
-			.fullScreenCover(isPresented: $host.expanded) { PreviewScreen() }
-			.overlay(alignment: .bottomTrailing) {
-				if host.isOpen && !host.expanded { MiniPreview() }
+		GeometryReader { geo in
+			HStack(spacing: 0) {
+				content
+				if host.isOpen && host.docked && !host.expanded && EditorTabs.enabled {
+					Divider()
+					DockedPreview().frame(width: max(320, geo.size.width * 0.4))
+				}
 			}
+		}
+		.fullScreenCover(isPresented: $host.expanded) { PreviewScreen() }
+		.overlay(alignment: .bottomTrailing) {
+			if host.isOpen && !host.expanded && !(host.docked && EditorTabs.enabled) { MiniPreview() }
+		}
 	}
 }
 
@@ -182,7 +192,10 @@ struct PreviewScreen: View {
 			.toolbar {
 				ToolbarItemGroup(placement: .cancellationAction) {
 					Button { host.close() } label: { Image(systemName: "xmark") }
-					Button { host.expanded = false } label: { Image(systemName: "pip.enter") }
+					Button { host.docked = false; host.expanded = false } label: { Image(systemName: "pip.enter") }
+					if EditorTabs.enabled {
+						Button { host.docked = true; host.expanded = false } label: { Image(systemName: "sidebar.right") }
+					}
 				}
 				ToolbarItemGroup(placement: .navigationBarTrailing) {
 					if hotReload { Image(systemName: "bolt.horizontal.circle.fill").foregroundStyle(.orange) }
@@ -284,5 +297,41 @@ struct ScaledController: UIViewControllerRepresentable {
 		vc.view.bounds = CGRect(origin: .zero, size: size)
 		vc.view.transform = CGAffineTransform(scaleX: scale, y: scale)
 		vc.view.center = CGPoint(x: size.width * scale / 2, y: size.height * scale / 2)
+	}
+}
+
+/// iPad: превью справа от редактора — пишешь код слева, экран приложения живёт справа.
+struct DockedPreview: View {
+	@ObservedObject private var host = PreviewHost.shared
+	@State private var showLog = false
+
+	var body: some View {
+		VStack(spacing: 0) {
+			HStack(spacing: 14) {
+				Text(host.project?.lastPathComponent ?? "").font(.subheadline.bold()).lineLimit(1)
+				Spacer()
+				if host.reloading { ProgressView() } else {
+					Button { host.reload() } label: { Image(systemName: "arrow.clockwise") }
+				}
+				Button { withAnimation { showLog.toggle() } } label: { Image(systemName: showLog ? "terminal.fill" : "terminal") }
+				Button { host.docked = false } label: { Image(systemName: "pip.enter") }
+				Button { host.expanded = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+				Button { host.close() } label: { Image(systemName: "xmark") }
+			}
+			.padding(.horizontal, 12)
+			.padding(.vertical, 8)
+			.background(Color(.secondarySystemBackground))
+			if let e = host.reloadError {
+				Text(e).font(.caption.monospaced()).foregroundStyle(.red).lineLimit(3)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(8)
+					.background(Color.red.opacity(0.1))
+			}
+			if let vc = host.vc { HostedController(vc: vc).id(host.generation) }
+			if showLog {
+				Divider()
+				LogPanel()
+			}
+		}
 	}
 }

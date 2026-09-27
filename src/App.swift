@@ -9,6 +9,7 @@ struct ForgeApp: App {
 
 	init() {
 		CrashLog.install()
+		EditorFonts.register()
 		Updater.cleanup()  // старый бандл после обновления
 		Snapshots.checkVersionChange()  // вернулись на новую версию — предложим её данные
 	}

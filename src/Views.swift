@@ -212,6 +212,8 @@ struct SettingsView: View {
 	@AppStorage("theme") private var themeID = "xcode"
 	@AppStorage("syntaxCheck") private var syntaxCheck = true
 	@AppStorage(L10n.key) private var language = "en"
+	@AppStorage(EditorFonts.key) private var editorFont = "system"
+	@AppStorage(EditorFonts.ligaturesKey) private var ligatures = true
 	@State private var newProvider: Provider?
 	@State private var showNewProvider = false
 
@@ -284,6 +286,10 @@ struct SettingsView: View {
 							Text(L(Theme.find(themeID).name)).font(.footnote).foregroundStyle(.secondary)
 						}
 					}
+					Picker(L("Font"), selection: $editorFont) {
+						ForEach(EditorFonts.all) { Text($0.title).tag($0.id) }
+					}
+					Toggle(L("Ligatures (!= -> =>)"), isOn: $ligatures)
 					Toggle(L("Syntax checking"), isOn: $syntaxCheck)
 					Stepper(L("Font: %@", Int(fontSize)), value: $fontSize, in: 9...28)
 					Toggle(L("Line numbers"), isOn: $lineNumbers)
